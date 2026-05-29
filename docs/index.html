@@ -1,0 +1,942 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes">
+    <title>📋 HKO 工時表</title>
+    <script type="importmap">
+        {
+            "imports": {
+                "firebase/app": "https://www.gstatic.com/firebasejs/11.0.0/firebase-app.js",
+                "firebase/database": "https://www.gstatic.com/firebasejs/11.0.0/firebase-database.js",
+                "firebase/auth": "https://www.gstatic.com/firebasejs/11.0.0/firebase-auth.js"
+            }
+        }
+    </script>
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/sweetalert2@11/dist/sweetalert2.min.css">
+    <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
+    <style>
+        * {
+            box-sizing: border-box;
+            font-family: system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+        }
+
+        body {
+            background: #f0f2f5;
+            margin: 0;
+            padding: 20px;
+            min-height: 100vh;
+        }
+
+        .container {
+            max-width: 1600px;
+            margin: 0 auto;
+            background: white;
+            border-radius: 24px;
+            box-shadow: 0 8px 20px rgba(0, 0, 0, 0.1);
+            padding: 20px 20px 28px;
+        }
+
+        .header-section {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            flex-wrap: wrap;
+            gap: 12px;
+            margin-bottom: 20px;
+        }
+
+        .tab-bar {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 8px;
+            margin-bottom: 20px;
+            border-bottom: 2px solid #e2e8f0;
+            padding-bottom: 12px;
+        }
+
+        .year-tab,
+        .month-tab {
+            background: #f1f5f9;
+            border: none;
+            padding: 8px 18px;
+            border-radius: 40px;
+            font-weight: 500;
+            cursor: pointer;
+            transition: 0.2s;
+            font-size: 0.9rem;
+        }
+
+        .year-tab.active,
+        .month-tab.active {
+            background: #1e4a76;
+            color: white;
+        }
+
+        .year-tab:hover,
+        .month-tab:hover {
+            background: #cbd5e1;
+        }
+
+        .toolbar {
+            display: flex;
+            justify-content: space-between;
+            flex-wrap: wrap;
+            gap: 12px;
+            margin-bottom: 20px;
+        }
+
+        .btn-group {
+            display: flex;
+            gap: 8px;
+            flex-wrap: wrap;
+        }
+
+        .btn {
+            background: #eef2ff;
+            border: none;
+            padding: 8px 16px;
+            border-radius: 30px;
+            font-weight: 500;
+            cursor: pointer;
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            font-size: 0.85rem;
+            transition: 0.2s;
+        }
+
+        .btn-primary {
+            background: #1e4a76;
+            color: white;
+        }
+
+        .btn-primary:disabled {
+            background: #9ca3af;
+            cursor: not-allowed;
+            opacity: 0.6;
+        }
+
+        .btn-outline {
+            background: white;
+            border: 1px solid #cbd5e1;
+        }
+
+        .btn-outline:disabled {
+            background: #f3f4f6;
+            color: #9ca3af;
+            cursor: not-allowed;
+        }
+
+        .status {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            font-size: 0.8rem;
+            background: #f8fafc;
+            padding: 4px 12px;
+            border-radius: 30px;
+        }
+
+        .status-dot {
+            width: 10px;
+            height: 10px;
+            border-radius: 50%;
+            background: #22c55e;
+        }
+
+        .status-dot.off {
+            background: #ef4444;
+        }
+
+        .status-dot.pending {
+            background: #eab308;
+        }
+
+        .user-info {
+            font-size: 0.75rem;
+            background: #eef2ff;
+            padding: 4px 12px;
+            border-radius: 30px;
+        }
+
+        .table-wrapper {
+            overflow-x: auto;
+            margin-top: 16px;
+            border-radius: 14px;
+            border: 1px solid #e2e8f0;
+        }
+
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            font-size: 0.85rem;
+            min-width: 1000px;
+        }
+
+        th,
+        td {
+            border: 1px solid #e2e8f0;
+            padding: 10px 8px;
+            text-align: center;
+            vertical-align: middle;
+        }
+
+        th {
+            background: #f8fafc;
+            font-weight: 600;
+            white-space: nowrap;
+        }
+
+        input.time-input {
+            width: 100px;
+            padding: 6px 4px;
+            text-align: center;
+            border: 1px solid #cbd5e1;
+            border-radius: 8px;
+            font-family: monospace;
+            font-size: 0.85rem;
+        }
+
+        input.time-input:focus {
+            outline: none;
+            border-color: #1e4a76;
+            box-shadow: 0 0 0 2px rgba(30, 74, 118, 0.2);
+        }
+
+        input.time-input:disabled {
+            background: #e5e7eb;
+            color: #4b5563;
+            cursor: not-allowed;
+            opacity: 0.7;
+        }
+
+        .leave-checkbox {
+            width: 20px;
+            height: 20px;
+            cursor: pointer;
+            transform: scale(1.1);
+        }
+
+        .leave-checkbox:disabled {
+            cursor: not-allowed;
+            opacity: 0.5;
+        }
+
+        .readonly-cell {
+            background: #f9f9fb;
+            font-weight: 500;
+        }
+
+        .data-present-row {
+            background-color: #e6f7e6;
+        }
+
+        .missing-data-row {
+            background-color: #fff0e0;
+        }
+
+        .weekend-row {
+            background-color: #e0e7ff;
+        }
+
+        .public-holiday-row {
+            background-color: #fee2e2;
+        }
+
+        .annual-leave-row {
+            background-color: #fef3c7;
+        }
+
+        .special-arrangement-row {
+            background-color: #ffe4e6;
+        }
+
+        .historical-row {
+            background-color: #f3f4f6;
+        }
+
+        .future-row {
+            background-color: #fefefe;
+        }
+
+        .footer-row {
+            background: #e6f0fa;
+            font-weight: bold;
+            border-top: 2px solid #1e4a76;
+        }
+
+        .badge {
+            display: inline-block;
+            font-size: 0.65rem;
+            padding: 2px 8px;
+            border-radius: 20px;
+            margin-left: 6px;
+            white-space: nowrap;
+        }
+
+        .badge-weekend {
+            background: #4f46e5;
+            color: white;
+        }
+
+        .badge-public {
+            background: #dc2626;
+            color: white;
+        }
+
+        .badge-leave {
+            background: #d97706;
+            color: white;
+        }
+
+        .badge-special {
+            background: #e11d48;
+            color: white;
+        }
+
+        .badge-data {
+            background: #22c55e;
+            color: white;
+        }
+
+        .badge-missing {
+            background: #ea580c;
+            color: white;
+        }
+
+        .badge-historical {
+            background: #6b7280;
+            color: white;
+        }
+
+        .badge-future {
+            background: #3b82f6;
+            color: white;
+        }
+
+        .pending-changes {
+            position: fixed;
+            bottom: 20px;
+            right: 20px;
+            background: #1e4a76;
+            color: white;
+            padding: 10px 20px;
+            border-radius: 40px;
+            display: flex;
+            gap: 12px;
+            align-items: center;
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
+            z-index: 1000;
+        }
+
+        .pending-changes button {
+            background: white;
+            border: none;
+            padding: 5px 12px;
+            border-radius: 30px;
+            cursor: pointer;
+            font-weight: 500;
+        }
+
+        body.loading-active {
+            pointer-events: none;
+            user-select: none;
+        }
+
+        body.loading-active .container {
+            opacity: 0.7;
+        }
+
+        .month-title {
+            margin: 0 0 16px 0;
+            font-size: 1.3rem;
+            color: #1e293b;
+        }
+
+        @media (max-width: 700px) {
+            input.time-input {
+                width: 80px;
+                font-size: 0.7rem;
+            }
+
+            .btn {
+                padding: 6px 12px;
+            }
+
+            .badge {
+                font-size: 0.55rem;
+            }
+
+            th,
+            td {
+                padding: 6px 4px;
+            }
+        }
+    </style>
+</head>
+
+<body>
+    <div class="container">
+        <div class="header-section">
+            <h2>📋 HKO 工時表</h2>
+            <div class="status-group">
+                <div class="user-info" id="userInfo">尚未登入</div>
+                <div class="status" id="connStatus"><span class="status-dot pending" id="statusDot"></span><span
+                        id="statusText">初始化中...</span></div>
+            </div>
+        </div>
+        <div class="tab-bar" id="yearTabs"></div>
+        <div class="tab-bar" id="monthTabs"></div>
+        <div class="toolbar">
+            <div class="btn-group">
+                <button class="btn btn-primary" id="consentBtn" disabled>🔒 同意並啟用儲存</button>
+                <button class="btn btn-outline" id="refreshBtn">🔄 重新整理</button>
+            </div>
+        </div>
+        <div id="tableContainer">
+            <div style="text-align:center;padding:60px;">🔐 載入設定中...</div>
+        </div>
+    </div>
+    <div id="pendingBar" class="pending-changes" style="display:none;">
+        ⚡ 未儲存的修改 <button id="savePendingBtn">💾 儲存</button> <button id="cancelPendingBtn">✖️ 取消</button>
+    </div>
+
+    <script type="module">
+        import { initializeApp } from "firebase/app";
+        import { getDatabase, ref, get, set, onValue } from "firebase/database";
+        import { getAuth, signInAnonymously, onAuthStateChanged } from "firebase/auth";
+
+        async function askFirebaseConfig() {
+            const stored = sessionStorage.getItem('firebaseConfig');
+            if (stored) try { return JSON.parse(stored); } catch (e) { }
+            const { value: cfg } = await Swal.fire({
+                title: '🔑 Firebase 設定',
+                html: `<div style="text-align:left"><div style="margin-bottom:10px"><label style="display:inline-block;width:130px">API Key <span style="color:red">*</span></label><input id="apiKey" class="swal2-input" style="width:calc(100% - 140px)" placeholder="AIzaSy..."></div>
+                    <div style="margin-bottom:10px"><label style="display:inline-block;width:130px">Auth Domain</label><input id="authDomain" class="swal2-input" style="width:calc(100% - 140px)" value="hko-timesheet.firebaseapp.com"></div>
+                    <div style="margin-bottom:10px"><label style="display:inline-block;width:130px">Database URL <span style="color:red">*</span></label><input id="databaseURL" class="swal2-input" style="width:calc(100% - 140px)" value="https://hko-timesheet-default-rtdb.firebaseio.com"></div>
+                    <div style="margin-bottom:10px"><label style="display:inline-block;width:130px">Project ID</label><input id="projectId" class="swal2-input" style="width:calc(100% - 140px)" value="hko-timesheet"></div>
+                    <div style="margin-bottom:10px"><label style="display:inline-block;width:130px">Storage Bucket</label><input id="storageBucket" class="swal2-input" style="width:calc(100% - 140px)" value="hko-timesheet.firebasestorage.app"></div>
+                    <div style="margin-bottom:10px"><label style="display:inline-block;width:130px">App ID</label><input id="appId" class="swal2-input" style="width:calc(100% - 140px)" value="1:23192257634:web:313337df8bbd98d1dafd3b"></div></div>`,
+                preConfirm: () => {
+                    const apiKey = document.getElementById('apiKey').value.trim();
+                    const dbURL = document.getElementById('databaseURL').value.trim();
+                    if (!apiKey || !dbURL) { Swal.showValidationMessage('需要 API Key 和 Database URL'); return false; }
+                    return { apiKey, authDomain: document.getElementById('authDomain').value.trim() || "hko-timesheet.firebaseapp.com", databaseURL: dbURL, projectId: document.getElementById('projectId').value.trim() || "hko-timesheet", storageBucket: document.getElementById('storageBucket').value.trim() || "hko-timesheet.firebasestorage.app", messagingSenderId: "23192257634", appId: document.getElementById('appId').value.trim() || "1:23192257634:web:313337df8bbd98d1dafd3b" };
+                },
+                showCancelButton: true, confirmButtonText: '連線', cancelButtonText: '離開', allowOutsideClick: false, width: '700px'
+            });
+            if (!cfg) { await Swal.fire('需要設定', '請提供 Firebase 憑證以繼續', 'error'); return askFirebaseConfig(); }
+            sessionStorage.setItem('firebaseConfig', JSON.stringify(cfg));
+            return cfg;
+        }
+
+        const userConfig = await askFirebaseConfig();
+        const app = initializeApp(userConfig);
+        const db = getDatabase(app);
+        const auth = getAuth(app);
+
+        let currentYear = 2025;
+        let currentMonth = 6;
+        let currentTableData = [];
+        let pendingChanges = new Map();
+        let activeListeners = [];
+        let isAuthenticated = false;
+        let loadingActive = false;
+        let USER = null;
+        let userConsented = false;  // 是否已獲得使用者同意儲存
+
+        const yearTabsDiv = document.getElementById('yearTabs');
+        const monthTabsDiv = document.getElementById('monthTabs');
+        const tableContainer = document.getElementById('tableContainer');
+        const refreshBtn = document.getElementById('refreshBtn');
+        const consentBtn = document.getElementById('consentBtn');
+        const pendingBar = document.getElementById('pendingBar');
+        const savePendingBtn = document.getElementById('savePendingBtn');
+        const cancelPendingBtn = document.getElementById('cancelPendingBtn');
+        const statusDot = document.getElementById('statusDot');
+        const statusText = document.getElementById('statusText');
+        const userInfoSpan = document.getElementById('userInfo');
+
+        async function showLoading(msg) { if (loadingActive) return; loadingActive = true; document.body.classList.add('loading-active'); Swal.fire({ title: msg, allowOutsideClick: false, allowEscapeKey: false, showConfirmButton: false, didOpen: () => Swal.showLoading() }); }
+        function hideLoading() { if (!loadingActive) return; loadingActive = false; document.body.classList.remove('loading-active'); if (Swal.isVisible()) Swal.close(); }
+        async function withLoading(op, msg) { try { await showLoading(msg); const res = await op(); hideLoading(); return res; } catch (e) { hideLoading(); throw e; } }
+        function showToast(msg, isErr = false) { Swal.fire({ icon: isErr ? 'error' : 'success', title: msg, toast: true, position: 'bottom-end', showConfirmButton: false, timer: 2300 }); }
+
+        function getTodayUTC8() { const now = new Date(); const off = now.getTimezoneOffset(); const utc8 = new Date(now.getTime() + (off + 480) * 60000); return new Date(utc8.getFullYear(), utc8.getMonth(), utc8.getDate()); }
+        const TODAY_UTC8 = getTodayUTC8();
+        const START_DATE = new Date(2025, 6, 11);
+
+        function getDateStatus(dateStr) {
+            const [y, m, d] = dateStr.split('-').map(Number);
+            const dateObj = new Date(y, m - 1, d);
+            if (dateObj < START_DATE) return 'historical';
+            if (dateObj > TODAY_UTC8) return 'future';
+            return 'editable';
+        }
+
+        function getExpectedWH(weekday, isFullDayOff) {
+            if (isFullDayOff) return "00:00";
+            const isWeekend = (weekday === '週六' || weekday === '週日' || weekday === 'Sat' || weekday === 'Sun');
+            if (isWeekend) return "00:00";
+            return (weekday === '週五' || weekday === 'Fri') ? "07:40" : "07:50";
+        }
+        function timeToMin(t) { if (!t || typeof t !== 'string' || !t.includes(':')) return 0; const [h, m] = t.split(':').map(Number); return (isNaN(h) || isNaN(m)) ? 0 : h * 60 + m; }
+        function minToTime(min) { min = Math.min(Math.max(0, min), 1439); return `${Math.floor(min / 60).toString().padStart(2, '0')}:${(min % 60).toString().padStart(2, '0')}`; }
+        function calcExpectedOff(t1, expWH, t2, t3) {
+            const startMin = timeToMin(t1);
+            const workMin = timeToMin(expWH);
+            const lunchBreak = Math.max(0, timeToMin(t3) - timeToMin(t2));
+            const total = startMin + workMin + lunchBreak;
+            return minToTime(total);
+        }
+
+        async function loadPublicHolidays(year) {
+            try { const snap = await get(ref(db, `holiday/${year}`)); return snap.exists() ? new Set(snap.val()) : new Set(); } catch (e) { return new Set(); }
+        }
+
+        async function loadFullDayOffAndRemarkSet(year) {
+            if (!USER) return { fullDays: new Set(), specialDays: new Map() };
+            const fullDays = new Set();
+            const specialDays = new Map();
+            try {
+                const snap = await get(ref(db, `timesheet/${USER}/${year}`));
+                if (snap.exists()) {
+                    const months = snap.val();
+                    for (const mon in months) {
+                        for (const day in months[mon]) {
+                            const rec = months[mon][day];
+                            const dateStr = `${year}-${mon}-${day}`;
+                            if (rec && rec.isAmOff === true && rec.isPmOff === true) {
+                                fullDays.add(dateStr);
+                                if (rec.remark && typeof rec.remark === 'string' && rec.remark.trim() !== '') {
+                                    specialDays.set(dateStr, rec.remark);
+                                }
+                            }
+                        }
+                    }
+                }
+            } catch (e) { console.warn(e); }
+            return { fullDays, specialDays };
+        }
+
+        async function saveDayData(dateStr, updates) {
+            if (!USER) return;
+            if (!userConsented) {
+                showToast("請先點擊「同意並啟用儲存」獲得授權", true);
+                throw new Error("User consent required");
+            }
+            const [year, month, day] = dateStr.split('-');
+            const dayPath = `timesheet/${USER}/${year}/${month}/${day}`;
+            let existing = {};
+            try { const snap = await get(ref(db, dayPath)); if (snap.exists()) existing = snap.val(); } catch (e) { }
+            const merged = { ...existing, ...updates };
+            await set(ref(db, dayPath), merged);
+        }
+
+        function getHolidayType(weekday, isPublic, isFullDayOff, hasSpecialRemark) {
+            const isWeekend = (weekday === '週六' || weekday === '週日' || weekday === 'Sat' || weekday === 'Sun');
+            if (isWeekend) return 'weekend';
+            if (isPublic) return 'public';
+            if (isFullDayOff) return hasSpecialRemark ? 'special' : 'annual';
+            return 'none';
+        }
+
+        async function loadMonthData(year, month) {
+            if (!isAuthenticated || !USER) return [];
+            activeListeners.forEach(unsub => unsub());
+            activeListeners = [];
+            const monthStr = (month + 1).toString().padStart(2, '0');
+            const daysInMonth = new Date(year, month + 1, 0).getDate();
+            const rows = [];
+            const publicHolidaysSet = await loadPublicHolidays(year);
+            const { fullDays: fullDayOffSet, specialDays } = await loadFullDayOffAndRemarkSet(year);
+
+            for (let d = 1; d <= daysInMonth; d++) {
+                const dayStr = d.toString().padStart(2, '0');
+                const dateStr = `${year}-${monthStr}-${dayStr}`;
+                const weekday = new Date(year, month, d).toLocaleDateString('zh-TW', { weekday: 'short' });
+                const dayPath = `timesheet/${USER}/${year}/${monthStr}/${dayStr}`;
+                let snapshot = null;
+                try { snapshot = await get(ref(db, dayPath)); } catch (e) { }
+                const dayData = snapshot?.exists() ? snapshot.val() : null;
+                const isPublic = publicHolidaysSet.has(dateStr);
+                const isFullDayOff = fullDayOffSet.has(dateStr);
+                const remark = specialDays.get(dateStr) || null;
+                const hasSpecialRemark = !!(remark && remark.trim() !== '');
+                const holidayType = getHolidayType(weekday, isPublic, isFullDayOff, hasSpecialRemark);
+
+                let times = { time1: null, time2: null, time3: null, time4: null };
+                let isAmOff = false, isPmOff = false;
+                let hasDataInFirebase = false;
+                if (dayData) {
+                    times = { time1: dayData.time1 ?? null, time2: dayData.time2 ?? null, time3: dayData.time3 ?? null, time4: dayData.time4 ?? null };
+                    isAmOff = dayData.isAmOff === true;
+                    isPmOff = dayData.isPmOff === true;
+                    hasDataInFirebase = true;
+                }
+                if (isFullDayOff) times = { time1: null, time2: null, time3: null, time4: null };
+                const expectedWH = getExpectedWH(weekday, isFullDayOff);
+                const expectedOff = calcExpectedOff(times.time1, expectedWH, times.time2, times.time3);
+                const dateStatus = getDateStatus(dateStr);
+                const isEditableOverall = dateStatus === 'editable' && holidayType !== 'weekend' && holidayType !== 'public' && !hasSpecialRemark;
+
+                rows.push({
+                    date: dateStr, weekday,
+                    times, isAmOff, isPmOff, isFullDayOff,
+                    holidayType, hasDataInFirebase, expectedWH, expectedOff,
+                    isEditable: isEditableOverall,
+                    dateStatus,
+                    hasSpecialRemark,
+                    remark
+                });
+
+                const dayRef = ref(db, dayPath);
+                const unsubscribe = onValue(dayRef, (snap) => {
+                    if (snap.exists() && isAuthenticated && pendingChanges.size === 0) {
+                        const fresh = snap.val();
+                        const row = rows.find(r => r.date === dateStr);
+                        if (row) {
+                            row.times = { time1: fresh.time1 ?? null, time2: fresh.time2 ?? null, time3: fresh.time3 ?? null, time4: fresh.time4 ?? null };
+                            row.isAmOff = fresh.isAmOff === true;
+                            row.isPmOff = fresh.isPmOff === true;
+                            row.isFullDayOff = (row.isAmOff && row.isPmOff);
+                            const freshRemark = fresh.remark || null;
+                            const hasSpecial = !!(freshRemark && freshRemark.trim() !== '');
+                            const newHolidayType = getHolidayType(row.weekday, publicHolidaysSet.has(dateStr), row.isFullDayOff, hasSpecial);
+                            row.holidayType = newHolidayType;
+                            row.hasSpecialRemark = hasSpecial;
+                            row.remark = freshRemark;
+                            row.hasDataInFirebase = true;
+                            const isFull = row.isFullDayOff;
+                            row.expectedWH = getExpectedWH(row.weekday, isFull);
+                            if (isFull) row.times = { time1: null, time2: null, time3: null, time4: null };
+                            row.expectedOff = calcExpectedOff(row.times.time1, row.expectedWH, row.times.time2, row.times.time3);
+                            const status = getDateStatus(dateStr);
+                            row.dateStatus = status;
+                            row.isEditable = status === 'editable' && newHolidayType !== 'weekend' && newHolidayType !== 'public' && !hasSpecial;
+                            if (currentYear === year && currentMonth === month) renderTable();
+                        }
+                    } else if (!snap.exists() && isAuthenticated) {
+                        const row = rows.find(r => r.date === dateStr);
+                        if (row && row.hasDataInFirebase !== false) {
+                            row.hasDataInFirebase = false;
+                            if (!row.isFullDayOff) row.times = { time1: null, time2: null, time3: null, time4: null };
+                            if (currentYear === year && currentMonth === month) renderTable();
+                        }
+                    }
+                });
+                activeListeners.push(unsubscribe);
+            }
+            currentTableData = rows;
+            return rows;
+        }
+
+        function computeFooterAcc() {
+            let totalMin = 0;
+            for (const row of currentTableData) {
+                // Skip public holidays and special arrangements in total calculation
+                if (row.holidayType === 'public' || row.holidayType === 'special') {
+                    continue;
+                }
+                if (row.expectedWH !== "00:00") {
+                    totalMin += timeToMin(row.expectedOff);
+                }
+            }
+            return minToTime(totalMin);
+        }
+
+        function handleFullDayLeaveChange(e) {
+            if (!userConsented) {
+                showToast("請先點擊「同意並啟用儲存」後方可修改資料", true);
+                e.target.checked = false;
+                return;
+            }
+            const checkbox = e.target;
+            const date = checkbox.dataset.date;
+            const isChecked = checkbox.checked;
+            const row = currentTableData.find(r => r.date === date);
+            if (!row) return;
+            if (row.hasSpecialRemark) {
+                checkbox.checked = false;
+                showToast("特別安排日期不可修改請假狀態", true);
+                return;
+            }
+            if (row.dateStatus !== 'editable') {
+                checkbox.checked = false;
+                showToast(`${row.dateStatus === 'historical' ? '歷史日期' : '未來日期'}無法修改請假`, true);
+                return;
+            }
+            if (row.holidayType === 'weekend' || row.holidayType === 'public') {
+                checkbox.checked = false;
+                showToast("節假日無法設定請假", true);
+                return;
+            }
+            const pendingKeyAm = `${date}_isAmOff`;
+            const pendingKeyPm = `${date}_isPmOff`;
+            const newAmOff = isChecked;
+            const newPmOff = isChecked;
+            if (newAmOff === row.isAmOff && newPmOff === row.isPmOff) {
+                pendingChanges.delete(pendingKeyAm);
+                pendingChanges.delete(pendingKeyPm);
+            } else {
+                pendingChanges.set(pendingKeyAm, newAmOff);
+                pendingChanges.set(pendingKeyPm, newPmOff);
+            }
+            row.isAmOff = newAmOff;
+            row.isPmOff = newPmOff;
+            row.isFullDayOff = newAmOff && newPmOff;
+            row.holidayType = getHolidayType(row.weekday, (row.holidayType === 'public'), row.isFullDayOff, false);
+            if (row.isFullDayOff) {
+                row.times = { time1: null, time2: null, time3: null, time4: null };
+                row.isEditable = false;
+            } else {
+                if (!row.hasDataInFirebase) row.times = { time1: null, time2: null, time3: null, time4: null };
+                row.isEditable = row.dateStatus === 'editable' && row.holidayType !== 'weekend' && row.holidayType !== 'public';
+            }
+            row.expectedWH = getExpectedWH(row.weekday, row.isFullDayOff);
+            row.expectedOff = calcExpectedOff(row.times.time1, row.expectedWH, row.times.time2, row.times.time3);
+            renderTable();
+            updatePendingUI();
+        }
+
+        function handleTimeChange(e) {
+            if (!userConsented) {
+                showToast("請先點擊「同意並啟用儲存」後方可修改資料", true);
+                e.target.value = "";
+                return;
+            }
+            const input = e.target;
+            const date = input.dataset.date;
+            const field = input.dataset.field;
+            let newVal = input.value || null;
+            if (newVal && !/^([01]\d|2[0-3]):([0-5]\d)$/.test(newVal)) {
+                showToast("請輸入24小時制時間 如 09:05", true);
+                input.value = "";
+                return;
+            }
+            const row = currentTableData.find(r => r.date === date);
+            if (!row || !row.isEditable || row.isFullDayOff || row.hasSpecialRemark) return;
+            const pendingKey = `${date}_${field}`;
+            const orig = row.times[field];
+            if (newVal === orig || (newVal === null && orig === null)) pendingChanges.delete(pendingKey);
+            else pendingChanges.set(pendingKey, newVal);
+            row.times[field] = newVal;
+            row.expectedOff = calcExpectedOff(row.times.time1, row.expectedWH, row.times.time2, row.times.time3);
+            renderTable();
+            updatePendingUI();
+        }
+
+        function updatePendingUI() { pendingBar.style.display = pendingChanges.size ? 'flex' : 'none'; renderTable(); }
+        function clearPending() { pendingChanges.clear(); renderTable(); updatePendingUI(); }
+
+        async function saveChanges() {
+            if (!userConsented) {
+                showToast("請先點擊「同意並啟用儲存」獲得授權", true);
+                return;
+            }
+            if (pendingChanges.size === 0) { showToast("無變更可儲存"); return; }
+            const changesByDate = new Map();
+            for (const [key, val] of pendingChanges.entries()) {
+                const parts = key.split('_');
+                const date = parts[0];
+                const field = parts[1];
+                if (!changesByDate.has(date)) changesByDate.set(date, {});
+                changesByDate.get(date)[field] = val;
+            }
+            await withLoading(async () => {
+                for (const [date, updates] of changesByDate.entries()) {
+                    const row = currentTableData.find(r => r.date === date);
+                    const finalUpdates = {};
+                    if (updates.time1 !== undefined) finalUpdates.time1 = updates.time1;
+                    if (updates.time2 !== undefined) finalUpdates.time2 = updates.time2;
+                    if (updates.time3 !== undefined) finalUpdates.time3 = updates.time3;
+                    if (updates.time4 !== undefined) finalUpdates.time4 = updates.time4;
+                    if (updates.isAmOff !== undefined) finalUpdates.isAmOff = updates.isAmOff;
+                    if (updates.isPmOff !== undefined) finalUpdates.isPmOff = updates.isPmOff;
+                    await saveDayData(date, finalUpdates);
+                    if (row) {
+                        if (finalUpdates.isAmOff !== undefined) row.isAmOff = finalUpdates.isAmOff;
+                        if (finalUpdates.isPmOff !== undefined) row.isPmOff = finalUpdates.isPmOff;
+                        row.isFullDayOff = row.isAmOff && row.isPmOff;
+                        if (finalUpdates.time1 !== undefined) row.times.time1 = finalUpdates.time1;
+                        if (finalUpdates.time2 !== undefined) row.times.time2 = finalUpdates.time2;
+                        if (finalUpdates.time3 !== undefined) row.times.time3 = finalUpdates.time3;
+                        if (finalUpdates.time4 !== undefined) row.times.time4 = finalUpdates.time4;
+                        row.hasDataInFirebase = true;
+                        row.holidayType = getHolidayType(row.weekday, (row.holidayType === 'public'), row.isFullDayOff, row.hasSpecialRemark);
+                        row.isEditable = row.dateStatus === 'editable' && row.holidayType !== 'weekend' && row.holidayType !== 'public' && !row.hasSpecialRemark;
+                        row.expectedWH = getExpectedWH(row.weekday, row.isFullDayOff);
+                        row.expectedOff = calcExpectedOff(row.times.time1, row.expectedWH, row.times.time2, row.times.time3);
+                    }
+                }
+                pendingChanges.clear();
+                await loadMonthData(currentYear, currentMonth);
+                renderTable();
+                updatePendingUI();
+            }, "儲存變更至 Firebase");
+            showToast("✅ 所有變更已儲存");
+        }
+
+        function renderTable() {
+            if (!currentTableData.length) { tableContainer.innerHTML = '<div style="text-align:center;padding:40px;">📅 無資料</div>'; return; }
+            const monthName = new Date(currentYear, currentMonth).toLocaleString('zh-TW', { month: 'long' });
+            let html = `<h3 class="month-title">📆 ${monthName} ${currentYear}</h3><div class="table-wrapper">\n<table>\n<thead>\n<tr>\n<th>日期</th><th>類別</th><th>星期</th><th>時間1</th><th>時間2</th><th>時間3</th><th>時間4</th><th>全天請假</th><th>預計工時</th><th>預計下班時間</th>\n</thead>\n<tbody>\n`;
+            for (const row of currentTableData) {
+                const pendingAm = pendingChanges.has(`${row.date}_isAmOff`) ? pendingChanges.get(`${row.date}_isAmOff`) : row.isAmOff;
+                const pendingPm = pendingChanges.has(`${row.date}_isPmOff`) ? pendingChanges.get(`${row.date}_isPmOff`) : row.isPmOff;
+                const pendingFullDay = pendingAm && pendingPm;
+                const displayTimes = {
+                    time1: pendingChanges.has(`${row.date}_time1`) ? pendingChanges.get(`${row.date}_time1`) : row.times.time1,
+                    time2: pendingChanges.has(`${row.date}_time2`) ? pendingChanges.get(`${row.date}_time2`) : row.times.time2,
+                    time3: pendingChanges.has(`${row.date}_time3`) ? pendingChanges.get(`${row.date}_time3`) : row.times.time3,
+                    time4: pendingChanges.has(`${row.date}_time4`) ? pendingChanges.get(`${row.date}_time4`) : row.times.time4,
+                };
+
+                // Force "00:00" for public holidays and special arrangements
+                let expectedWH = row.expectedWH;
+                let expectedOff = row.expectedOff;
+
+                if (row.holidayType === 'public' || row.holidayType === 'special') {
+                    expectedWH = "00:00";
+                    expectedOff = "00:00";
+                } else if (pendingChanges.has(`${row.date}_time1`) || pendingChanges.has(`${row.date}_time2`) || pendingChanges.has(`${row.date}_time3`)) {
+                    expectedOff = calcExpectedOff(displayTimes.time1, expectedWH, displayTimes.time2, displayTimes.time3);
+                }
+
+                // Create badge HTML with tooltip for special arrangements
+                let badgeHtml = '';
+                if (row.holidayType === 'weekend') {
+                    badgeHtml = '<span class="badge badge-weekend">週末</span>';
+                } else if (row.holidayType === 'public') {
+                    badgeHtml = '<span class="badge badge-public">公眾假期</span>';
+                } else if (row.holidayType === 'special') {
+                    const remarkText = row.remark ? row.remark.replace(/"/g, '&quot;') : '特別安排';
+                    badgeHtml = `<span class="badge badge-special" title="${remarkText}">特別安排</span>`;
+                } else if (row.isFullDayOff || pendingFullDay) {
+                    badgeHtml = '<span class="badge badge-leave">全天請假</span>';
+                } else if (row.dateStatus === 'historical') {
+                    badgeHtml = '<span class="badge badge-historical">歷史</span>';
+                } else if (row.dateStatus === 'future') {
+                    badgeHtml = '<span class="badge badge-future">未來</span>';
+                } else if (!row.hasDataInFirebase) {
+                    badgeHtml = '<span class="badge badge-missing">缺失</span>';
+                } else {
+                    badgeHtml = '<span class="badge badge-data">已有</span>';
+                }
+
+                const isSpecial = row.hasSpecialRemark;
+                const isTimeEditable = row.isEditable && !row.isFullDayOff && !pendingFullDay && row.dateStatus === 'editable' && !isSpecial && userConsented && row.holidayType !== 'public' && row.holidayType !== 'special';
+                const leaveDisabled = (row.holidayType === 'weekend' || row.holidayType === 'public' || row.dateStatus !== 'editable' || isSpecial) || !userConsented;
+                const currentFullFlag = isSpecial ? false : (pendingFullDay !== undefined ? pendingFullDay : row.isFullDayOff);
+
+                let rowClass = '';
+                if (row.holidayType === 'weekend') rowClass = 'weekend-row';
+                else if (row.holidayType === 'public') rowClass = 'public-holiday-row';
+                else if (row.holidayType === 'special') rowClass = 'special-arrangement-row';
+                else if (currentFullFlag && !isSpecial) rowClass = 'annual-leave-row';
+                else if (row.dateStatus === 'historical') rowClass = 'historical-row';
+                else if (row.dateStatus === 'future') rowClass = 'future-row';
+                else if (row.hasDataInFirebase) rowClass = 'data-present-row';
+                else rowClass = 'missing-data-row';
+
+                html += `<tr class="${rowClass}">`;
+                html += `<td style="white-space: nowrap;">${row.date}${row.remark ? `<span style="font-size:0.65rem; margin-left:4px; color:#e11d48;" title="${row.remark.replace(/"/g, '&quot;')}">📝</span>` : ''}</td>`;
+                html += `<td>${badgeHtml}</td>`;
+                html += `<td>${row.weekday}</td>`;
+                html += `<td><input type="time" class="time-input" value="${displayTimes.time1 || ''}" ${isTimeEditable ? '' : 'disabled'} data-field="time1" data-date="${row.date}"></td>`;
+                html += `<td><input type="time" class="time-input" value="${displayTimes.time2 || ''}" ${isTimeEditable ? '' : 'disabled'} data-field="time2" data-date="${row.date}"></td>`;
+                html += `<td><input type="time" class="time-input" value="${displayTimes.time3 || ''}" ${isTimeEditable ? '' : 'disabled'} data-field="time3" data-date="${row.date}"></td>`;
+                html += `<td><input type="time" class="time-input" value="${displayTimes.time4 || ''}" ${isTimeEditable ? '' : 'disabled'} data-field="time4" data-date="${row.date}"></td>`;
+                html += `<td><input type="checkbox" class="leave-checkbox" data-date="${row.date}" ${leaveDisabled ? 'disabled' : ''} ${currentFullFlag ? 'checked' : ''}></td>`;
+                html += `<td class="readonly-cell">${expectedWH}</td>`;
+                html += `<td class="readonly-cell">${expectedOff}</td>`;
+                html += `</tr>\n`;
+            }
+            const footerAcc = computeFooterAcc();
+            html += `<tr class="footer-row"><td colspan="9" style="text-align:right;font-weight:bold;">累計預計下班時間</td><td style="font-weight:bold;">${footerAcc}</td></tr>`;
+            html += `</tbody>\n</table>\n</div>`;
+            tableContainer.innerHTML = html;
+            document.querySelectorAll('.time-input:not([disabled])').forEach(inp => { inp.removeEventListener('change', handleTimeChange); inp.addEventListener('change', handleTimeChange); });
+            document.querySelectorAll('.leave-checkbox:not([disabled])').forEach(cb => { cb.removeEventListener('change', handleFullDayLeaveChange); cb.addEventListener('change', handleFullDayLeaveChange); });
+        }
+
+        async function switchYear(year) {
+            if (pendingChanges.size > 0 && !(await Swal.fire({ title: '未儲存', text: '切換年份將丟失未儲存修改', icon: 'warning', showCancelButton: true, confirmButtonText: '繼續' })).isConfirmed) return;
+            pendingChanges.clear();
+            currentYear = year;
+            renderYearTabs(); renderMonthTabs();
+        }
+        async function switchMonth(idx) {
+            if (pendingChanges.size > 0 && !(await Swal.fire({ title: '未儲存', text: '切換月份將丟失未儲存修改', icon: 'warning', showCancelButton: true, confirmButtonText: '繼續' })).isConfirmed) return;
+            pendingChanges.clear();
+            currentMonth = idx;
+            await withLoading(() => loadMonthData(currentYear, currentMonth), "載入月份...");
+            renderTable(); renderMonthTabs(); updatePendingUI();
+        }
+        function renderYearTabs() { const years = [2025, 2026, 2027, 2028, 2029, 2030]; yearTabsDiv.innerHTML = years.map(y => `<button class="year-tab ${currentYear === y ? 'active' : ''}" data-year="${y}">${y}</button>`).join(''); document.querySelectorAll('.year-tab').forEach(btn => btn.addEventListener('click', () => switchYear(parseInt(btn.dataset.year)))); }
+        function renderMonthTabs() { const months = ['1月', '2月', '3月', '4月', '5月', '6月', '7月', '8月', '9月', '10月', '11月', '12月']; monthTabsDiv.innerHTML = months.map((m, idx) => `<button class="month-tab ${currentMonth === idx ? 'active' : ''}" data-month="${idx}">${m}</button>`).join(''); document.querySelectorAll('.month-tab').forEach(btn => btn.addEventListener('click', () => switchMonth(parseInt(btn.dataset.month)))); }
+
+        // 同意按鈕邏輯
+        async function showConsentPopup() {
+            const result = await Swal.fire({
+                title: '⚠️ 資料儲存同意書',
+                html: `<div style="text-align: left;">
+                    <p>您將要修改並儲存工時資料至 Firebase 資料庫。</p>
+                    <p>按下<strong>「我同意」</strong>代表您確認：</p>
+                    <ul style="text-align: left;">
+                        <li>您有權限修改這些資料</li>
+                        <li>所有修改記錄將會被儲存</li>
+                        <li>您同意承擔資料正確性的責任</li>
+                    </ul>
+                    <p>如果您不同意，將無法儲存任何變更。</p>
+                </div>`,
+                icon: 'question',
+                showCancelButton: true,
+                confirmButtonText: '✅ 我同意，啟用儲存',
+                cancelButtonText: '❌ 不同意',
+                allowOutsideClick: false
+            });
+            if (result.isConfirmed) {
+                userConsented = true;
+                consentBtn.disabled = true;
+                consentBtn.textContent = '✅ 已同意並啟用儲存';
+                consentBtn.style.background = '#22c55e';
+                consentBtn.style.opacity = '0.8';
+                showToast("已獲得儲存授權，您現在可以修改並儲存資料");
+                renderTable(); // 重新渲染啟用輸入框
+            } else {
+                showToast("您尚未同意儲存條款，無法儲存修改", true);
+            }
+        }
+
+        consentBtn.addEventListener('click', showConsentPopup);
+
+        refreshBtn.addEventListener('click', async () => {
+            if (pendingChanges.size > 0 && !(await Swal.fire({ title: '未儲存', text: '重新整理會遺失變更', icon: 'warning', showCancelButton: true }).isConfirmed)) return;
+            clearPending();
+            await withLoading(() => loadMonthData(currentYear, currentMonth), "重新整理");
+            renderTable();
+            showToast("已重新整理");
+        });
+        savePendingBtn.addEventListener('click', saveChanges);
+        cancelPendingBtn.addEventListener('click', () => { clearPending(); showToast("已放棄修改"); });
+
+        async function initAuth() {
+            statusText.textContent = '登入中...'; statusDot.className = 'status-dot pending';
+            try { const result = await signInAnonymously(auth); USER = result.user.uid; return true; } catch (e) { statusText.textContent = '認證失敗'; statusDot.className = 'status-dot off'; await Swal.fire({ icon: 'error', title: '認證失敗', text: e.message }).then(() => location.reload()); return false; }
+        }
+        onAuthStateChanged(auth, async (user) => {
+            if (user) {
+                isAuthenticated = true; USER = user.uid; userInfoSpan.textContent = `👤 ${USER.substring(0, 8)}...`;
+                statusDot.className = 'status-dot'; statusText.textContent = '已連線';
+                consentBtn.disabled = false;
+                consentBtn.textContent = '🔒 同意並啟用儲存';
+                await withLoading(async () => { renderYearTabs(); renderMonthTabs(); await loadMonthData(currentYear, currentMonth); renderTable(); onValue(ref(db, '.info/connected'), snap => { if (snap.val() === true && isAuthenticated) { statusDot.className = 'status-dot'; statusText.textContent = '線上'; } else if (!isAuthenticated) { } else { statusDot.className = 'status-dot off'; statusText.textContent = '離線'; } }); }, "載入工時表...");
+            } else { isAuthenticated = false; USER = null; userInfoSpan.textContent = '未登入'; statusDot.className = 'status-dot off'; statusText.textContent = '需要認證'; consentBtn.disabled = true; await initAuth(); }
+        });
+    </script>
+</body>
+
+</html>
