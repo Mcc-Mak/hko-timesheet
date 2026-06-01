@@ -4,7 +4,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes">
-    <title>📋 HKO 工時表</title>
+    <title>📋 HKO 工時表 - 實際工時版</title>
     <script type="importmap">
         {
             "imports": {
@@ -79,6 +79,13 @@
             background: #cbd5e1;
         }
 
+        .month-tab.disabled,
+        .year-tab.disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+            background: #e2e8f0;
+        }
+
         .toolbar {
             display: flex;
             justify-content: space-between;
@@ -121,12 +128,6 @@
         .btn-outline {
             background: white;
             border: 1px solid #cbd5e1;
-        }
-
-        .btn-outline:disabled {
-            background: #f3f4f6;
-            color: #9ca3af;
-            cursor: not-allowed;
         }
 
         .status {
@@ -172,7 +173,7 @@
             width: 100%;
             border-collapse: collapse;
             font-size: 0.85rem;
-            min-width: 1000px;
+            min-width: 1200px;
         }
 
         th,
@@ -213,10 +214,10 @@
         }
 
         .leave-checkbox {
-            width: 20px;
-            height: 20px;
+            width: 18px;
+            height: 18px;
             cursor: pointer;
-            transform: scale(1.1);
+            margin: 0 4px;
         }
 
         .leave-checkbox:disabled {
@@ -245,7 +246,8 @@
             background-color: #fee2e2;
         }
 
-        .annual-leave-row {
+        .am-leave-row,
+        .pm-leave-row {
             background-color: #fef3c7;
         }
 
@@ -286,8 +288,9 @@
             color: white;
         }
 
-        .badge-leave {
-            background: #d97706;
+        .badge-am-leave,
+        .badge-pm-leave {
+            background: #f59e0b;
             color: white;
         }
 
@@ -355,9 +358,43 @@
             color: #1e293b;
         }
 
+        .rectifying-editor {
+            margin-top: 16px;
+            padding: 12px 16px;
+            background: #f8fafc;
+            border-radius: 12px;
+            border: 1px solid #e2e8f0;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            flex-wrap: wrap;
+            gap: 12px;
+        }
+
+        .rectifying-editor-left {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            flex-wrap: wrap;
+        }
+
+        .rectifying-editor-label {
+            font-weight: 500;
+            color: #1e293b;
+        }
+
+        .rectifying-editor-input {
+            width: 100px;
+            padding: 6px 8px;
+            border: 1px solid #cbd5e1;
+            border-radius: 8px;
+            font-size: 0.85rem;
+            text-align: center;
+        }
+
         @media (max-width: 700px) {
             input.time-input {
-                width: 80px;
+                width: 70px;
                 font-size: 0.7rem;
             }
 
@@ -372,6 +409,11 @@
             th,
             td {
                 padding: 6px 4px;
+            }
+
+            .rectifying-editor {
+                flex-direction: column;
+                align-items: stretch;
             }
         }
     </style>
@@ -392,60 +434,102 @@
         <div class="toolbar">
             <div class="btn-group">
                 <button class="btn btn-primary" id="consentBtn" disabled>🔒 同意並啟用儲存</button>
-                <button class="btn btn-outline" id="refreshBtn">🔄 重新整理</button>
+                <button class="btn btn-outline" id="refreshBtn" disabled>🔄 重新整理</button>
             </div>
         </div>
         <div id="tableContainer">
             <div style="text-align:center;padding:60px;">🔐 載入設定中...</div>
         </div>
     </div>
-    <div id="pendingBar" class="pending-changes" style="display:none;">
-        ⚡ 未儲存的修改 <button id="savePendingBtn">💾 儲存</button> <button id="cancelPendingBtn">✖️ 取消</button>
-    </div>
+    <div id="pendingBar" class="pending-changes" style="display:none;">⚡ 未儲存的修改 <button id="savePendingBtn">💾
+            儲存</button> <button id="cancelPendingBtn">✖️ 取消</button></div>
 
     <script type="module">
         import { initializeApp } from "firebase/app";
         import { getDatabase, ref, get, set, onValue } from "firebase/database";
         import { getAuth, signInAnonymously, onAuthStateChanged } from "firebase/auth";
 
+        const LOG_PREFIX = "[HKO工時表]";
+        function logInfo(m, d = null) { console.log(`${LOG_PREFIX} ℹ️ ${m}`, d || ''); }
+        function logError(m, e = null) { console.error(`${LOG_PREFIX} ❌ ${m}`, e || ''); }
+        function logSuccess(m, d = null) { console.log(`${LOG_PREFIX} ✅ ${m}`, d || ''); }
+
         async function askFirebaseConfig() {
             const stored = sessionStorage.getItem('firebaseConfig');
             if (stored) try { return JSON.parse(stored); } catch (e) { }
             const { value: cfg } = await Swal.fire({
                 title: '🔑 Firebase 設定',
-                html: `<div style="text-align:left"><div style="margin-bottom:10px"><label style="display:inline-block;width:130px">API Key <span style="color:red">*</span></label><input id="apiKey" class="swal2-input" style="width:calc(100% - 140px)" placeholder="AIzaSy..."></div>
-                    <div style="margin-bottom:10px"><label style="display:inline-block;width:130px">Auth Domain</label><input id="authDomain" class="swal2-input" style="width:calc(100% - 140px)" value="hko-timesheet.firebaseapp.com"></div>
-                    <div style="margin-bottom:10px"><label style="display:inline-block;width:130px">Database URL <span style="color:red">*</span></label><input id="databaseURL" class="swal2-input" style="width:calc(100% - 140px)" value="https://hko-timesheet-default-rtdb.firebaseio.com"></div>
-                    <div style="margin-bottom:10px"><label style="display:inline-block;width:130px">Project ID</label><input id="projectId" class="swal2-input" style="width:calc(100% - 140px)" value="hko-timesheet"></div>
-                    <div style="margin-bottom:10px"><label style="display:inline-block;width:130px">Storage Bucket</label><input id="storageBucket" class="swal2-input" style="width:calc(100% - 140px)" value="hko-timesheet.firebasestorage.app"></div>
-                    <div style="margin-bottom:10px"><label style="display:inline-block;width:130px">App ID</label><input id="appId" class="swal2-input" style="width:calc(100% - 140px)" value="1:23192257634:web:313337df8bbd98d1dafd3b"></div></div>`,
+                html: `<div style="text-align:left"><div><label>API Key <span style="color:red">*</span></label><input id="apiKey" class="swal2-input" style="width:100%"></div>
+                    <div><label>Database URL <span style="color:red">*</span></label><input id="databaseURL" class="swal2-input" style="width:100%" value="https://hko-timesheet-default-rtdb.firebaseio.com"></div></div>`,
                 preConfirm: () => {
                     const apiKey = document.getElementById('apiKey').value.trim();
                     const dbURL = document.getElementById('databaseURL').value.trim();
                     if (!apiKey || !dbURL) { Swal.showValidationMessage('需要 API Key 和 Database URL'); return false; }
-                    return { apiKey, authDomain: document.getElementById('authDomain').value.trim() || "hko-timesheet.firebaseapp.com", databaseURL: dbURL, projectId: document.getElementById('projectId').value.trim() || "hko-timesheet", storageBucket: document.getElementById('storageBucket').value.trim() || "hko-timesheet.firebasestorage.app", messagingSenderId: "23192257634", appId: document.getElementById('appId').value.trim() || "1:23192257634:web:313337df8bbd98d1dafd3b" };
-                },
-                showCancelButton: true, confirmButtonText: '連線', cancelButtonText: '離開', allowOutsideClick: false, width: '700px'
+                    return { apiKey, authDomain: "hko-timesheet.firebaseapp.com", databaseURL: dbURL, projectId: "hko-timesheet", storageBucket: "hko-timesheet.firebasestorage.app", messagingSenderId: "23192257634", appId: "1:23192257634:web:313337df8bbd98d1dafd3b" };
+                }, showCancelButton: true, confirmButtonText: '連線', cancelButtonText: '離開', allowOutsideClick: false
             });
-            if (!cfg) { await Swal.fire('需要設定', '請提供 Firebase 憑證以繼續', 'error'); return askFirebaseConfig(); }
+            if (!cfg) { await Swal.fire('需要設定', '請提供 Firebase 憑證', 'error'); return askFirebaseConfig(); }
             sessionStorage.setItem('firebaseConfig', JSON.stringify(cfg));
             return cfg;
         }
-
         const userConfig = await askFirebaseConfig();
         const app = initializeApp(userConfig);
         const db = getDatabase(app);
         const auth = getAuth(app);
 
-        let currentYear = 2025;
-        let currentMonth = 6;
+        // UTC+8 今天日期 (00:00)
+        function getTodayUTC8() { const now = new Date(); const off = now.getTimezoneOffset(); const utc8 = new Date(now.getTime() + (off + 480) * 60000); return new Date(utc8.getFullYear(), utc8.getMonth(), utc8.getDate()); }
+        const TODAY_UTC8 = getTodayUTC8();
+        const START_DATE = new Date(2025, 6, 11);   // 2025-07-11
+        // 有效區間：2025-07-11 ~ 本月最後一天 (含本月)
+        const END_DATE = new Date(TODAY_UTC8.getFullYear(), TODAY_UTC8.getMonth() + 1, 0); // 當月最後一天
+
+        function isDateInRange(year, month, day = 1) {
+            const checkDate = new Date(year, month, day);
+            return checkDate >= START_DATE && checkDate <= END_DATE;
+        }
+        function isYearDisabled(year) {
+            // 年份若完全不在 [2025-07, 當月] 範圍則禁用
+            const firstDayOfYear = new Date(year, 0, 1);
+            const lastDayOfYear = new Date(year, 11, 31);
+            return !(firstDayOfYear <= END_DATE && lastDayOfYear >= START_DATE);
+        }
+        function isMonthDisabled(year, month) {
+            const firstDay = new Date(year, month, 1);
+            const lastDay = new Date(year, month + 1, 0);
+            return !(firstDay <= END_DATE && lastDay >= START_DATE);
+        }
+
+        // 初始化: 預設選取「當前月份」(今天所在的月份)，但不可超過 END_DATE 且必須 >= START_DATE
+        let currentYear = TODAY_UTC8.getFullYear();
+        let currentMonth = TODAY_UTC8.getMonth();
+        // 確保選取的月份在有效範圍內
+        if (isMonthDisabled(currentYear, currentMonth)) {
+            // 若當前月份被禁用(例如未來月份不該發生，但以防萬一)，回退到最後一個可用月份
+            let found = false;
+            for (let y = currentYear; y >= START_DATE.getFullYear(); y--) {
+                for (let m = 11; m >= 0; m--) {
+                    if (!isMonthDisabled(y, m)) {
+                        currentYear = y; currentMonth = m; found = true; break;
+                    }
+                }
+                if (found) break;
+            }
+        }
+        // 確保年份也有效
+        if (isYearDisabled(currentYear)) {
+            for (let y = END_DATE.getFullYear(); y >= START_DATE.getFullYear(); y--) {
+                if (!isYearDisabled(y)) { currentYear = y; break; }
+            }
+        }
+
         let currentTableData = [];
         let pendingChanges = new Map();
         let activeListeners = [];
         let isAuthenticated = false;
         let loadingActive = false;
         let USER = null;
-        let userConsented = false;  // 是否已獲得使用者同意儲存
+        let userConsented = false;
 
         const yearTabsDiv = document.getElementById('yearTabs');
         const monthTabsDiv = document.getElementById('monthTabs');
@@ -464,26 +548,20 @@
         async function withLoading(op, msg) { try { await showLoading(msg); const res = await op(); hideLoading(); return res; } catch (e) { hideLoading(); throw e; } }
         function showToast(msg, isErr = false) { Swal.fire({ icon: isErr ? 'error' : 'success', title: msg, toast: true, position: 'bottom-end', showConfirmButton: false, timer: 2300 }); }
 
-        function getTodayUTC8() { const now = new Date(); const off = now.getTimezoneOffset(); const utc8 = new Date(now.getTime() + (off + 480) * 60000); return new Date(utc8.getFullYear(), utc8.getMonth(), utc8.getDate()); }
-        const TODAY_UTC8 = getTodayUTC8();
-        const START_DATE = new Date(2025, 6, 11);
+        function timeToMin(t) { if (!t || typeof t !== 'string' || !t.includes(':')) return 0; const [h, m] = t.split(':').map(Number); return (isNaN(h) || isNaN(m)) ? 0 : h * 60 + m; }
+        function minToTime(min) { const absMin = Math.abs(min); const hours = Math.floor(absMin / 60); const minutes = absMin % 60; const sign = min < 0 ? '-' : ''; return `${sign}${hours.toString().padStart(2, '0')}:${minutes.toString().padStart(2, '0')}`; }
+        function formatTimeDisplay(t) { if (!t || t === "00:00") return "—"; return t; }
 
-        function getDateStatus(dateStr) {
-            const [y, m, d] = dateStr.split('-').map(Number);
-            const dateObj = new Date(y, m - 1, d);
-            if (dateObj < START_DATE) return 'historical';
-            if (dateObj > TODAY_UTC8) return 'future';
-            return 'editable';
-        }
-
-        function getExpectedWH(weekday, isFullDayOff) {
-            if (isFullDayOff) return "00:00";
+        function getExpectedWH(weekday, isAmOff, isPmOff) {
             const isWeekend = (weekday === '週六' || weekday === '週日' || weekday === 'Sat' || weekday === 'Sun');
             if (isWeekend) return "00:00";
-            return (weekday === '週五' || weekday === 'Fri') ? "07:40" : "07:50";
+            const isFriday = (weekday === '週五' || weekday === 'Fri');
+            const base = isFriday ? "07:40" : "07:50";
+            if (isAmOff && isPmOff) return "00:00";
+            if (isAmOff) return "04:20";
+            if (isPmOff) return isFriday ? "03:25" : "03:35";
+            return base;
         }
-        function timeToMin(t) { if (!t || typeof t !== 'string' || !t.includes(':')) return 0; const [h, m] = t.split(':').map(Number); return (isNaN(h) || isNaN(m)) ? 0 : h * 60 + m; }
-        function minToTime(min) { min = Math.min(Math.max(0, min), 1439); return `${Math.floor(min / 60).toString().padStart(2, '0')}:${(min % 60).toString().padStart(2, '0')}`; }
         function calcExpectedOff(t1, expWH, t2, t3) {
             const startMin = timeToMin(t1);
             const workMin = timeToMin(expWH);
@@ -491,140 +569,106 @@
             const total = startMin + workMin + lunchBreak;
             return minToTime(total);
         }
-
-        async function loadPublicHolidays(year) {
-            try { const snap = await get(ref(db, `holiday/${year}`)); return snap.exists() ? new Set(snap.val()) : new Set(); } catch (e) { return new Set(); }
-        }
-
-        async function loadFullDayOffAndRemarkSet(year) {
-            if (!USER) return { fullDays: new Set(), specialDays: new Map() };
-            const fullDays = new Set();
-            const specialDays = new Map();
-            try {
-                const snap = await get(ref(db, `timesheet/${USER}/${year}`));
-                if (snap.exists()) {
-                    const months = snap.val();
-                    for (const mon in months) {
-                        for (const day in months[mon]) {
-                            const rec = months[mon][day];
-                            const dateStr = `${year}-${mon}-${day}`;
-                            if (rec && rec.isAmOff === true && rec.isPmOff === true) {
-                                fullDays.add(dateStr);
-                                if (rec.remark && typeof rec.remark === 'string' && rec.remark.trim() !== '') {
-                                    specialDays.set(dateStr, rec.remark);
-                                }
-                            }
-                        }
-                    }
-                }
-            } catch (e) { console.warn(e); }
-            return { fullDays, specialDays };
-        }
-
-        async function saveDayData(dateStr, updates) {
-            if (!USER) return;
-            if (!userConsented) {
-                showToast("請先點擊「同意並啟用儲存」獲得授權", true);
-                throw new Error("User consent required");
+        function calcActualWork(t1, t2, t3, t4, isAmOff, isPmOff, weekday) {
+            const isFriday = (weekday === '週五' || weekday === 'Fri');
+            if (isAmOff && isPmOff) return "00:00";
+            if (isAmOff && !isPmOff) {
+                const pmStart = isFriday ? "13:55" : "14:00";
+                const pmStartMin = timeToMin(pmStart);
+                const t3Min = timeToMin(t3);
+                const t4Min = timeToMin(t4);
+                if (t3 && t4 && t3Min > 0 && t4Min > 0) return minToTime(Math.max(0, t4Min - t3Min));
+                return null;
             }
-            const [year, month, day] = dateStr.split('-');
-            const dayPath = `timesheet/${USER}/${year}/${month}/${day}`;
-            let existing = {};
-            try { const snap = await get(ref(db, dayPath)); if (snap.exists()) existing = snap.val(); } catch (e) { }
-            const merged = { ...existing, ...updates };
-            await set(ref(db, dayPath), merged);
+            if (!isAmOff && isPmOff) {
+                const amEnd = "12:30";
+                const amEndMin = timeToMin(amEnd);
+                const t1Min = timeToMin(t1);
+                const t2Min = timeToMin(t2);
+                if (t1 && t2 && t1Min > 0 && t2Min > 0) return minToTime(Math.max(0, t2Min - t1Min));
+                return null;
+            }
+            if (!t1 || !t2 || !t3 || !t4) return null;
+            const lunch = timeToMin(t4) - timeToMin(t3);
+            const morning = timeToMin(t2) - timeToMin(t1);
+            if (lunch <= 0 || morning <= 0) return null;
+            return minToTime(morning + lunch);
         }
 
-        function getHolidayType(weekday, isPublic, isFullDayOff, hasSpecialRemark) {
+        function getHolidayType(weekday, isPublic, isAmOff, isPmOff, hasSpecial) {
             const isWeekend = (weekday === '週六' || weekday === '週日' || weekday === 'Sat' || weekday === 'Sun');
             if (isWeekend) return 'weekend';
             if (isPublic) return 'public';
-            if (isFullDayOff) return hasSpecialRemark ? 'special' : 'annual';
+            if (hasSpecial) return 'special';
+            if (isAmOff && isPmOff) return 'full-day-off';
+            if (isAmOff) return 'am-off';
+            if (isPmOff) return 'pm-off';
             return 'none';
         }
 
+        async function loadPublicHolidays(year) { try { const snap = await get(ref(db, `holiday/${year}`)); return snap.exists() ? new Set(snap.val()) : new Set(); } catch (e) { return new Set(); } }
+        async function loadDayOffMap(year, mapKey) { if (!USER) return new Map(); const res = new Map(); try { const snap = await get(ref(db, `timesheet/${USER}/${year}`)); if (snap.exists()) { for (const mon in snap.val()) for (const day in snap.val()[mon]) if (snap.val()[mon][day][mapKey] === true) res.set(`${year}-${mon}-${day}`, true); } } catch (e) { } return res; }
+        async function loadSpecialRemarks(year) { if (!USER) return new Map(); const map = new Map(); try { const snap = await get(ref(db, `timesheet/${USER}/${year}`)); if (snap.exists()) for (const mon in snap.val()) for (const day in snap.val()[mon]) { const r = snap.val()[mon][day]?.remark; if (r && typeof r === 'string' && r.trim() !== '') map.set(`${year}-${mon}-${day}`, r); } } catch (e) { } return map; }
+
         async function loadMonthData(year, month) {
             if (!isAuthenticated || !USER) return [];
-            activeListeners.forEach(unsub => unsub());
-            activeListeners = [];
+            activeListeners.forEach(unsub => unsub()); activeListeners = [];
             const monthStr = (month + 1).toString().padStart(2, '0');
             const daysInMonth = new Date(year, month + 1, 0).getDate();
             const rows = [];
-            const publicHolidaysSet = await loadPublicHolidays(year);
-            const { fullDays: fullDayOffSet, specialDays } = await loadFullDayOffAndRemarkSet(year);
-
+            const publicHolidays = await loadPublicHolidays(year);
+            const amOffMap = await loadDayOffMap(year, 'isAmOff');
+            const pmOffMap = await loadDayOffMap(year, 'isPmOff');
+            const specialMap = await loadSpecialRemarks(year);
             for (let d = 1; d <= daysInMonth; d++) {
                 const dayStr = d.toString().padStart(2, '0');
                 const dateStr = `${year}-${monthStr}-${dayStr}`;
                 const weekday = new Date(year, month, d).toLocaleDateString('zh-TW', { weekday: 'short' });
                 const dayPath = `timesheet/${USER}/${year}/${monthStr}/${dayStr}`;
-                let snapshot = null;
-                try { snapshot = await get(ref(db, dayPath)); } catch (e) { }
-                const dayData = snapshot?.exists() ? snapshot.val() : null;
-                const isPublic = publicHolidaysSet.has(dateStr);
-                const isFullDayOff = fullDayOffSet.has(dateStr);
-                const remark = specialDays.get(dateStr) || null;
-                const hasSpecialRemark = !!(remark && remark.trim() !== '');
-                const holidayType = getHolidayType(weekday, isPublic, isFullDayOff, hasSpecialRemark);
-
+                let snap = null;
+                try { snap = await get(ref(db, dayPath)); } catch (e) { }
+                const dayData = snap?.exists() ? snap.val() : null;
+                const isPublic = publicHolidays.has(dateStr);
+                const baseAmOff = amOffMap.has(dateStr);
+                const basePmOff = pmOffMap.has(dateStr);
+                const baseRemark = specialMap.get(dateStr) || null;
+                const hasSpecialRemark = !!(baseRemark && baseRemark.trim() !== '');
                 let times = { time1: null, time2: null, time3: null, time4: null };
-                let isAmOff = false, isPmOff = false;
                 let hasDataInFirebase = false;
+                let isAmOff = baseAmOff, isPmOff = basePmOff, remark = baseRemark;
                 if (dayData) {
                     times = { time1: dayData.time1 ?? null, time2: dayData.time2 ?? null, time3: dayData.time3 ?? null, time4: dayData.time4 ?? null };
-                    isAmOff = dayData.isAmOff === true;
-                    isPmOff = dayData.isPmOff === true;
                     hasDataInFirebase = true;
+                    if (dayData.isAmOff !== undefined) isAmOff = dayData.isAmOff;
+                    if (dayData.isPmOff !== undefined) isPmOff = dayData.isPmOff;
+                    if (dayData.remark) remark = dayData.remark;
                 }
-                if (isFullDayOff) times = { time1: null, time2: null, time3: null, time4: null };
-                const expectedWH = getExpectedWH(weekday, isFullDayOff);
+                const holidayType = getHolidayType(weekday, isPublic, isAmOff, isPmOff, hasSpecialRemark);
+                const expectedWH = getExpectedWH(weekday, isAmOff, isPmOff);
                 const expectedOff = calcExpectedOff(times.time1, expectedWH, times.time2, times.time3);
-                const dateStatus = getDateStatus(dateStr);
-                const isEditableOverall = dateStatus === 'editable' && holidayType !== 'weekend' && holidayType !== 'public' && !hasSpecialRemark;
-
-                rows.push({
-                    date: dateStr, weekday,
-                    times, isAmOff, isPmOff, isFullDayOff,
-                    holidayType, hasDataInFirebase, expectedWH, expectedOff,
-                    isEditable: isEditableOverall,
-                    dateStatus,
-                    hasSpecialRemark,
-                    remark
-                });
-
-                const dayRef = ref(db, dayPath);
-                const unsubscribe = onValue(dayRef, (snap) => {
+                const actualWork = calcActualWork(times.time1, times.time2, times.time3, times.time4, isAmOff, isPmOff, weekday);
+                const dateStatus = (new Date(year, month, d) > TODAY_UTC8) ? 'future' : (new Date(year, month, d) < START_DATE ? 'historical' : 'editable');
+                const isEditable = (dateStatus === 'editable' && holidayType !== 'weekend' && holidayType !== 'public' && !hasSpecialRemark);
+                rows.push({ date: dateStr, weekday, times, isAmOff, isPmOff, holidayType, hasDataInFirebase, expectedWH, expectedOff, actualWork, isEditable, dateStatus, hasSpecialRemark, remark });
+                const unsubscribe = onValue(ref(db, dayPath), (snap) => {
                     if (snap.exists() && isAuthenticated && pendingChanges.size === 0) {
-                        const fresh = snap.val();
+                        const f = snap.val();
                         const row = rows.find(r => r.date === dateStr);
                         if (row) {
-                            row.times = { time1: fresh.time1 ?? null, time2: fresh.time2 ?? null, time3: fresh.time3 ?? null, time4: fresh.time4 ?? null };
-                            row.isAmOff = fresh.isAmOff === true;
-                            row.isPmOff = fresh.isPmOff === true;
-                            row.isFullDayOff = (row.isAmOff && row.isPmOff);
-                            const freshRemark = fresh.remark || null;
-                            const hasSpecial = !!(freshRemark && freshRemark.trim() !== '');
-                            const newHolidayType = getHolidayType(row.weekday, publicHolidaysSet.has(dateStr), row.isFullDayOff, hasSpecial);
-                            row.holidayType = newHolidayType;
-                            row.hasSpecialRemark = hasSpecial;
-                            row.remark = freshRemark;
-                            row.hasDataInFirebase = true;
-                            const isFull = row.isFullDayOff;
-                            row.expectedWH = getExpectedWH(row.weekday, isFull);
-                            if (isFull) row.times = { time1: null, time2: null, time3: null, time4: null };
+                            row.times = { time1: f.time1 ?? null, time2: f.time2 ?? null, time3: f.time3 ?? null, time4: f.time4 ?? null };
+                            row.isAmOff = f.isAmOff === true; row.isPmOff = f.isPmOff === true;
+                            const fr = f.remark || null; const hasSpecial = !!(fr && fr.trim());
+                            row.holidayType = getHolidayType(row.weekday, publicHolidays.has(dateStr), row.isAmOff, row.isPmOff, hasSpecial);
+                            row.hasSpecialRemark = hasSpecial; row.remark = fr;
+                            row.expectedWH = getExpectedWH(row.weekday, row.isAmOff, row.isPmOff);
                             row.expectedOff = calcExpectedOff(row.times.time1, row.expectedWH, row.times.time2, row.times.time3);
-                            const status = getDateStatus(dateStr);
-                            row.dateStatus = status;
-                            row.isEditable = status === 'editable' && newHolidayType !== 'weekend' && newHolidayType !== 'public' && !hasSpecial;
+                            row.actualWork = calcActualWork(row.times.time1, row.times.time2, row.times.time3, row.times.time4, row.isAmOff, row.isPmOff, row.weekday);
+                            row.isEditable = (row.dateStatus === 'editable' && row.holidayType !== 'weekend' && row.holidayType !== 'public' && !row.hasSpecialRemark);
                             if (currentYear === year && currentMonth === month) renderTable();
                         }
                     } else if (!snap.exists() && isAuthenticated) {
                         const row = rows.find(r => r.date === dateStr);
-                        if (row && row.hasDataInFirebase !== false) {
-                            row.hasDataInFirebase = false;
-                            if (!row.isFullDayOff) row.times = { time1: null, time2: null, time3: null, time4: null };
-                            if (currentYear === year && currentMonth === month) renderTable();
-                        }
+                        if (row && row.hasDataInFirebase !== false) { row.hasDataInFirebase = false; if (!row.isAmOff && !row.isPmOff) row.times = { time1: null, time2: null, time3: null, time4: null }; row.actualWork = null; if (currentYear === year && currentMonth === month) renderTable(); }
                     }
                 });
                 activeListeners.push(unsubscribe);
@@ -633,309 +677,273 @@
             return rows;
         }
 
-        function computeFooterAcc() {
-            let totalMin = 0;
+        function computeCumulativeDifference() {
+            let totalExpected = 0, totalActual = 0;
             for (const row of currentTableData) {
-                // Skip public holidays and special arrangements in total calculation
-                if (row.holidayType === 'public' || row.holidayType === 'special') {
-                    continue;
+                if (row.dateStatus !== 'editable') continue;
+                if (["weekend", "public", "special", "full-day-off"].includes(row.holidayType)) continue;
+                const expMin = timeToMin(row.expectedWH);
+                totalExpected += expMin;
+                let actMin = 0;
+                if (row.actualWork && row.actualWork !== "00:00") actMin = timeToMin(row.actualWork);
+                else if (row.times.time1 && row.times.time2 && row.times.time3 && row.times.time4) {
+                    const tmp = calcActualWork(row.times.time1, row.times.time2, row.times.time3, row.times.time4, row.isAmOff, row.isPmOff, row.weekday);
+                    if (tmp) actMin = timeToMin(tmp);
                 }
-                if (row.expectedWH !== "00:00") {
-                    totalMin += timeToMin(row.expectedOff);
+                totalActual += actMin;
+            }
+            return totalExpected - totalActual;
+        }
+        async function saveCumulativeDiffToFirebase(diffMin) {
+            if (!USER || !userConsented) return;
+            const monthStr = (currentMonth + 1).toString().padStart(2, '0');
+            const offsetRef = ref(db, `offset/${USER}/${currentYear}/${monthStr}`);
+            let existingFactor = 0;
+            try { const snap = await get(offsetRef); if (snap.exists()) existingFactor = snap.val().rectifyingFactor || 0; } catch (e) { }
+            await set(offsetRef, { differenceMinutes: diffMin, differenceFormatted: `${diffMin < 0 ? "要加班" : "已加班"} ${minToTime(Math.abs(diffMin))}`, rectifyingFactor: existingFactor, lastUpdated: new Date().toISOString() });
+        }
+        async function getRectifyingFactor(year, month) { if (!USER) return 0; try { const snap = await get(ref(db, `offset/${USER}/${year}/${(month + 1).toString().padStart(2, '0')}`)); return snap.exists() ? snap.val().rectifyingFactor || 0 : 0; } catch (e) { return 0; } }
+        async function setRectifyingFactor(year, month, factor) { if (!USER || !userConsented) return; const path = `offset/${USER}/${year}/${(month + 1).toString().padStart(2, '0')}`; const snap = await get(ref(db, path)); const existing = snap.exists() ? snap.val() : {}; await set(ref(db, path), { ...existing, rectifyingFactor: factor, lastUpdated: new Date().toISOString() }); }
+        async function calculateTotalCumulativeDiffFromJul2025() {
+            if (!USER) return 0;
+            let total = 0;
+            const startY = 2025, startM = 6; // 7月 index=6
+            const endY = currentYear, endM = currentMonth;
+            for (let y = startY; y <= endY; y++) {
+                const mStart = (y === startY) ? startM : 0;
+                const mEnd = (y === endY) ? endM : 11;
+                for (let m = mStart; m <= mEnd; m++) {
+                    const monthStr = (m + 1).toString().padStart(2, '0');
+                    try {
+                        const snap = await get(ref(db, `offset/${USER}/${y}/${monthStr}`));
+                        if (snap.exists()) {
+                            const data = snap.val();
+                            total += (data.differenceMinutes || 0) + (data.rectifyingFactor || 0);
+                            console.log(`${y}/${m}`, (data.differenceMinutes || 0), (data.rectifyingFactor || 0))
+                        }
+                    } catch (e) { }
                 }
             }
-            return minToTime(totalMin);
+            console.log(total)
+            return total;
         }
 
-        function handleFullDayLeaveChange(e) {
-            if (!userConsented) {
-                showToast("請先點擊「同意並啟用儲存」後方可修改資料", true);
-                e.target.checked = false;
-                return;
-            }
-            const checkbox = e.target;
-            const date = checkbox.dataset.date;
-            const isChecked = checkbox.checked;
-            const row = currentTableData.find(r => r.date === date);
-            if (!row) return;
-            if (row.hasSpecialRemark) {
-                checkbox.checked = false;
-                showToast("特別安排日期不可修改請假狀態", true);
-                return;
-            }
-            if (row.dateStatus !== 'editable') {
-                checkbox.checked = false;
-                showToast(`${row.dateStatus === 'historical' ? '歷史日期' : '未來日期'}無法修改請假`, true);
-                return;
-            }
-            if (row.holidayType === 'weekend' || row.holidayType === 'public') {
-                checkbox.checked = false;
-                showToast("節假日無法設定請假", true);
-                return;
-            }
-            const pendingKeyAm = `${date}_isAmOff`;
-            const pendingKeyPm = `${date}_isPmOff`;
-            const newAmOff = isChecked;
-            const newPmOff = isChecked;
-            if (newAmOff === row.isAmOff && newPmOff === row.isPmOff) {
-                pendingChanges.delete(pendingKeyAm);
-                pendingChanges.delete(pendingKeyPm);
-            } else {
-                pendingChanges.set(pendingKeyAm, newAmOff);
-                pendingChanges.set(pendingKeyPm, newPmOff);
-            }
-            row.isAmOff = newAmOff;
-            row.isPmOff = newPmOff;
-            row.isFullDayOff = newAmOff && newPmOff;
-            row.holidayType = getHolidayType(row.weekday, (row.holidayType === 'public'), row.isFullDayOff, false);
-            if (row.isFullDayOff) {
-                row.times = { time1: null, time2: null, time3: null, time4: null };
-                row.isEditable = false;
-            } else {
-                if (!row.hasDataInFirebase) row.times = { time1: null, time2: null, time3: null, time4: null };
-                row.isEditable = row.dateStatus === 'editable' && row.holidayType !== 'weekend' && row.holidayType !== 'public';
-            }
-            row.expectedWH = getExpectedWH(row.weekday, row.isFullDayOff);
-            row.expectedOff = calcExpectedOff(row.times.time1, row.expectedWH, row.times.time2, row.times.time3);
-            renderTable();
-            updatePendingUI();
-        }
-
-        function handleTimeChange(e) {
-            if (!userConsented) {
-                showToast("請先點擊「同意並啟用儲存」後方可修改資料", true);
-                e.target.value = "";
-                return;
-            }
-            const input = e.target;
-            const date = input.dataset.date;
-            const field = input.dataset.field;
-            let newVal = input.value || null;
-            if (newVal && !/^([01]\d|2[0-3]):([0-5]\d)$/.test(newVal)) {
-                showToast("請輸入24小時制時間 如 09:05", true);
-                input.value = "";
-                return;
-            }
-            const row = currentTableData.find(r => r.date === date);
-            if (!row || !row.isEditable || row.isFullDayOff || row.hasSpecialRemark) return;
-            const pendingKey = `${date}_${field}`;
-            const orig = row.times[field];
-            if (newVal === orig || (newVal === null && orig === null)) pendingChanges.delete(pendingKey);
-            else pendingChanges.set(pendingKey, newVal);
-            row.times[field] = newVal;
-            row.expectedOff = calcExpectedOff(row.times.time1, row.expectedWH, row.times.time2, row.times.time3);
-            renderTable();
-            updatePendingUI();
-        }
-
-        function updatePendingUI() { pendingBar.style.display = pendingChanges.size ? 'flex' : 'none'; renderTable(); }
-        function clearPending() { pendingChanges.clear(); renderTable(); updatePendingUI(); }
-
-        async function saveChanges() {
-            if (!userConsented) {
-                showToast("請先點擊「同意並啟用儲存」獲得授權", true);
-                return;
-            }
-            if (pendingChanges.size === 0) { showToast("無變更可儲存"); return; }
-            const changesByDate = new Map();
-            for (const [key, val] of pendingChanges.entries()) {
-                const parts = key.split('_');
-                const date = parts[0];
-                const field = parts[1];
-                if (!changesByDate.has(date)) changesByDate.set(date, {});
-                changesByDate.get(date)[field] = val;
-            }
-            await withLoading(async () => {
-                for (const [date, updates] of changesByDate.entries()) {
-                    const row = currentTableData.find(r => r.date === date);
-                    const finalUpdates = {};
-                    if (updates.time1 !== undefined) finalUpdates.time1 = updates.time1;
-                    if (updates.time2 !== undefined) finalUpdates.time2 = updates.time2;
-                    if (updates.time3 !== undefined) finalUpdates.time3 = updates.time3;
-                    if (updates.time4 !== undefined) finalUpdates.time4 = updates.time4;
-                    if (updates.isAmOff !== undefined) finalUpdates.isAmOff = updates.isAmOff;
-                    if (updates.isPmOff !== undefined) finalUpdates.isPmOff = updates.isPmOff;
-                    await saveDayData(date, finalUpdates);
-                    if (row) {
-                        if (finalUpdates.isAmOff !== undefined) row.isAmOff = finalUpdates.isAmOff;
-                        if (finalUpdates.isPmOff !== undefined) row.isPmOff = finalUpdates.isPmOff;
-                        row.isFullDayOff = row.isAmOff && row.isPmOff;
-                        if (finalUpdates.time1 !== undefined) row.times.time1 = finalUpdates.time1;
-                        if (finalUpdates.time2 !== undefined) row.times.time2 = finalUpdates.time2;
-                        if (finalUpdates.time3 !== undefined) row.times.time3 = finalUpdates.time3;
-                        if (finalUpdates.time4 !== undefined) row.times.time4 = finalUpdates.time4;
-                        row.hasDataInFirebase = true;
-                        row.holidayType = getHolidayType(row.weekday, (row.holidayType === 'public'), row.isFullDayOff, row.hasSpecialRemark);
-                        row.isEditable = row.dateStatus === 'editable' && row.holidayType !== 'weekend' && row.holidayType !== 'public' && !row.hasSpecialRemark;
-                        row.expectedWH = getExpectedWH(row.weekday, row.isFullDayOff);
-                        row.expectedOff = calcExpectedOff(row.times.time1, row.expectedWH, row.times.time2, row.times.time3);
-                    }
-                }
-                pendingChanges.clear();
-                await loadMonthData(currentYear, currentMonth);
-                renderTable();
-                updatePendingUI();
-            }, "儲存變更至 Firebase");
-            showToast("✅ 所有變更已儲存");
-        }
-
-        function renderTable() {
+        async function renderTable() {
             if (!currentTableData.length) { tableContainer.innerHTML = '<div style="text-align:center;padding:40px;">📅 無資料</div>'; return; }
             const monthName = new Date(currentYear, currentMonth).toLocaleString('zh-TW', { month: 'long' });
-            let html = `<h3 class="month-title">📆 ${monthName} ${currentYear}</h3><div class="table-wrapper">\n<table>\n<thead>\n<tr>\n<th>日期</th><th>類別</th><th>星期</th><th>時間1</th><th>時間2</th><th>時間3</th><th>時間4</th><th>全天請假</th><th>預計工時</th><th>預計下班時間</th>\n</thead>\n<tbody>\n`;
+            let html = `<h3 class="month-title">📆 ${monthName} ${currentYear}</h3><div class="table-wrapper"><table><thead><tr><th>日期</th><th>類別</th><th>星期</th><th>時間（一）</th><th>時間（二）</th><th>時間（三）</th><th>時間（四）</th><th>早上請假</th><th>下午請假</th><th>預計工時</th><th>實際工時</th><th>預計下班時間</th></tr></thead><tbody>`;
             for (const row of currentTableData) {
                 const pendingAm = pendingChanges.has(`${row.date}_isAmOff`) ? pendingChanges.get(`${row.date}_isAmOff`) : row.isAmOff;
                 const pendingPm = pendingChanges.has(`${row.date}_isPmOff`) ? pendingChanges.get(`${row.date}_isPmOff`) : row.isPmOff;
-                const pendingFullDay = pendingAm && pendingPm;
                 const displayTimes = {
                     time1: pendingChanges.has(`${row.date}_time1`) ? pendingChanges.get(`${row.date}_time1`) : row.times.time1,
                     time2: pendingChanges.has(`${row.date}_time2`) ? pendingChanges.get(`${row.date}_time2`) : row.times.time2,
                     time3: pendingChanges.has(`${row.date}_time3`) ? pendingChanges.get(`${row.date}_time3`) : row.times.time3,
                     time4: pendingChanges.has(`${row.date}_time4`) ? pendingChanges.get(`${row.date}_time4`) : row.times.time4,
                 };
-
-                // Force "00:00" for public holidays and special arrangements
-                let expectedWH = row.expectedWH;
-                let expectedOff = row.expectedOff;
-
-                if (row.holidayType === 'public' || row.holidayType === 'special') {
-                    expectedWH = "00:00";
-                    expectedOff = "00:00";
-                } else if (pendingChanges.has(`${row.date}_time1`) || pendingChanges.has(`${row.date}_time2`) || pendingChanges.has(`${row.date}_time3`)) {
+                let expectedWH = row.expectedWH, expectedOff = row.expectedOff, actualWorkDisplay = row.actualWork;
+                if (row.holidayType === 'public' || row.holidayType === 'special') { expectedWH = "00:00"; expectedOff = "00:00"; actualWorkDisplay = "00:00"; }
+                else if (pendingChanges.size) {
                     expectedOff = calcExpectedOff(displayTimes.time1, expectedWH, displayTimes.time2, displayTimes.time3);
+                    actualWorkDisplay = calcActualWork(displayTimes.time1, displayTimes.time2, displayTimes.time3, displayTimes.time4, pendingAm, pendingPm, row.weekday);
                 }
-
-                // Create badge HTML with tooltip for special arrangements
                 let badgeHtml = '';
-                if (row.holidayType === 'weekend') {
-                    badgeHtml = '<span class="badge badge-weekend">週末</span>';
-                } else if (row.holidayType === 'public') {
-                    badgeHtml = '<span class="badge badge-public">公眾假期</span>';
-                } else if (row.holidayType === 'special') {
-                    const remarkText = row.remark ? row.remark.replace(/"/g, '&quot;') : '特別安排';
-                    badgeHtml = `<span class="badge badge-special" title="${remarkText}">特別安排</span>`;
-                } else if (row.isFullDayOff || pendingFullDay) {
-                    badgeHtml = '<span class="badge badge-leave">全天請假</span>';
-                } else if (row.dateStatus === 'historical') {
-                    badgeHtml = '<span class="badge badge-historical">歷史</span>';
-                } else if (row.dateStatus === 'future') {
-                    badgeHtml = '<span class="badge badge-future">未來</span>';
-                } else if (!row.hasDataInFirebase) {
-                    badgeHtml = '<span class="badge badge-missing">缺失</span>';
-                } else {
-                    badgeHtml = '<span class="badge badge-data">已有</span>';
-                }
+                if (row.holidayType === 'weekend') badgeHtml = '<span class="badge badge-weekend">週末</span>';
+                else if (row.holidayType === 'public') badgeHtml = '<span class="badge badge-public">公眾假期</span>';
+                else if (row.holidayType === 'special') badgeHtml = `<span class="badge badge-special" title="${(row.remark || '').replace(/"/g, '&quot;')}">特別安排</span>`;
+                else if (row.holidayType === 'full-day-off') badgeHtml = '<span class="badge badge-am-leave">全天請假</span>';
+                else if (row.holidayType === 'am-off') badgeHtml = '<span class="badge badge-am-leave">早上請假</span>';
+                else if (row.holidayType === 'pm-off') badgeHtml = '<span class="badge badge-pm-leave">下午請假</span>';
+                else if (row.dateStatus === 'historical') badgeHtml = '<span class="badge badge-historical">歷史</span>';
+                else if (row.dateStatus === 'future') badgeHtml = '<span class="badge badge-future">未來</span>';
+                else if (!row.hasDataInFirebase) badgeHtml = '<span class="badge badge-missing">缺失</span>';
+                else badgeHtml = '<span class="badge badge-data">已有</span>';
+                const isSpecialRow = row.hasSpecialRemark;
+                const isEditableTime = row.isEditable && userConsented && row.dateStatus === 'editable' && !isSpecialRow && row.holidayType !== 'public' && row.holidayType !== 'special' && row.holidayType !== 'weekend';
 
-                const isSpecial = row.hasSpecialRemark;
-                const isTimeEditable = row.isEditable && !row.isFullDayOff && !pendingFullDay && row.dateStatus === 'editable' && !isSpecial && userConsented && row.holidayType !== 'public' && row.holidayType !== 'special';
-                const leaveDisabled = (row.holidayType === 'weekend' || row.holidayType === 'public' || row.dateStatus !== 'editable' || isSpecial) || !userConsented;
-                const currentFullFlag = isSpecial ? false : (pendingFullDay !== undefined ? pendingFullDay : row.isFullDayOff);
+                // 根據請假狀態控制時間輸入欄位啟用/禁用，且若勾選早上請假則強制清空時間1、2；下午請假清空時間3、4
+                const time1Disabled = !isEditableTime || (pendingAm === true);
+                const time2Disabled = !isEditableTime || (pendingAm === true);
+                const time3Disabled = !isEditableTime || (pendingPm === true);
+                const time4Disabled = !isEditableTime || (pendingPm === true);
 
+                // 若 pending 中因為請假而清空，顯示時需反映 null
+                const finalTime1 = (pendingAm === true) ? null : displayTimes.time1;
+                const finalTime2 = (pendingAm === true) ? null : displayTimes.time2;
+                const finalTime3 = (pendingPm === true) ? null : displayTimes.time3;
+                const finalTime4 = (pendingPm === true) ? null : displayTimes.time4;
+
+                const amDisabled = (!userConsented) || row.dateStatus !== 'editable' || isSpecialRow || row.holidayType === 'weekend' || row.holidayType === 'public';
+                const pmDisabled = (!userConsented) || row.dateStatus !== 'editable' || isSpecialRow || row.holidayType === 'weekend' || row.holidayType === 'public';
                 let rowClass = '';
                 if (row.holidayType === 'weekend') rowClass = 'weekend-row';
                 else if (row.holidayType === 'public') rowClass = 'public-holiday-row';
                 else if (row.holidayType === 'special') rowClass = 'special-arrangement-row';
-                else if (currentFullFlag && !isSpecial) rowClass = 'annual-leave-row';
+                else if (row.holidayType === 'full-day-off') rowClass = 'am-leave-row';
+                else if (row.holidayType === 'am-off') rowClass = 'am-leave-row';
+                else if (row.holidayType === 'pm-off') rowClass = 'pm-leave-row';
                 else if (row.dateStatus === 'historical') rowClass = 'historical-row';
                 else if (row.dateStatus === 'future') rowClass = 'future-row';
                 else if (row.hasDataInFirebase) rowClass = 'data-present-row';
                 else rowClass = 'missing-data-row';
-
                 html += `<tr class="${rowClass}">`;
-                html += `<td style="white-space: nowrap;">${row.date}${row.remark ? `<span style="font-size:0.65rem; margin-left:4px; color:#e11d48;" title="${row.remark.replace(/"/g, '&quot;')}">📝</span>` : ''}</td>`;
-                html += `<td>${badgeHtml}</td>`;
-                html += `<td>${row.weekday}</td>`;
-                html += `<td><input type="time" class="time-input" value="${displayTimes.time1 || ''}" ${isTimeEditable ? '' : 'disabled'} data-field="time1" data-date="${row.date}"></td>`;
-                html += `<td><input type="time" class="time-input" value="${displayTimes.time2 || ''}" ${isTimeEditable ? '' : 'disabled'} data-field="time2" data-date="${row.date}"></td>`;
-                html += `<td><input type="time" class="time-input" value="${displayTimes.time3 || ''}" ${isTimeEditable ? '' : 'disabled'} data-field="time3" data-date="${row.date}"></td>`;
-                html += `<td><input type="time" class="time-input" value="${displayTimes.time4 || ''}" ${isTimeEditable ? '' : 'disabled'} data-field="time4" data-date="${row.date}"></td>`;
-                html += `<td><input type="checkbox" class="leave-checkbox" data-date="${row.date}" ${leaveDisabled ? 'disabled' : ''} ${currentFullFlag ? 'checked' : ''}></td>`;
-                html += `<td class="readonly-cell">${expectedWH}</td>`;
-                html += `<td class="readonly-cell">${expectedOff}</td>`;
-                html += `</tr>\n`;
+                html += `<td style="white-space:nowrap;">${row.date}${row.remark ? `<span style="font-size:0.65rem; margin-left:4px; color:#e11d48;" title="${(row.remark || '').replace(/"/g, '&quot;')}">📝</span>` : ''}</td>`;
+                html += `<td>${badgeHtml}</td><td>${row.weekday}</td>`;
+                html += `<td><input type="time" class="time-input" value="${finalTime1 || ''}" ${time1Disabled ? 'disabled' : ''} data-field="time1" data-date="${row.date}"></td>`;
+                html += `<td><input type="time" class="time-input" value="${finalTime2 || ''}" ${time2Disabled ? 'disabled' : ''} data-field="time2" data-date="${row.date}"></td>`;
+                html += `<td><input type="time" class="time-input" value="${finalTime3 || ''}" ${time3Disabled ? 'disabled' : ''} data-field="time3" data-date="${row.date}"></td>`;
+                html += `<td><input type="time" class="time-input" value="${finalTime4 || ''}" ${time4Disabled ? 'disabled' : ''} data-field="time4" data-date="${row.date}"></td>`;
+                html += `<td><input type="checkbox" class="leave-checkbox am-leave" data-date="${row.date}" data-type="am" ${amDisabled ? 'disabled' : ''} ${pendingAm ? 'checked' : ''}></td>`;
+                html += `<td><input type="checkbox" class="leave-checkbox pm-leave" data-date="${row.date}" data-type="pm" ${pmDisabled ? 'disabled' : ''} ${pendingPm ? 'checked' : ''}></td>`;
+                html += `<td class="readonly-cell">${formatTimeDisplay(expectedWH)}</td>`;
+                html += `<td class="readonly-cell">${(actualWorkDisplay && actualWorkDisplay !== "00:00") ? actualWorkDisplay : (row.holidayType === 'public' || row.holidayType === 'special' ? formatTimeDisplay("00:00") : (actualWorkDisplay === "00:00" ? "—" : (actualWorkDisplay || "—")))}</td>`;
+                html += `<td class="readonly-cell">${formatTimeDisplay(expectedOff)}</td>`;
+                html += `<\/tr>`;
             }
-            const footerAcc = computeFooterAcc();
-            html += `<tr class="footer-row"><td colspan="9" style="text-align:right;font-weight:bold;">累計預計下班時間</td><td style="font-weight:bold;">${footerAcc}</td></tr>`;
-            html += `</tbody>\n</table>\n</div>`;
+            const monthDiff = computeCumulativeDifference();
+            await saveCumulativeDiffToFirebase(monthDiff);
+            const totalOffset = await calculateTotalCumulativeDiffFromJul2025();
+            const totalOffsetText = `${totalOffset < 0 ? "要加班" : "已加班"} ${minToTime(Math.abs(totalOffset))}`;
+            html += `<tr class="footer-row"><td colspan="9" style="text-align:right;font-weight:bold;">累計總差值 (2025-07 至本月，含校正)</td><td colspan="3" style="font-weight:bold;">${totalOffsetText}</td></tr>`;
+            html += `</tbody></div>`;
             tableContainer.innerHTML = html;
+            const currentFactor = await getRectifyingFactor(currentYear, currentMonth);
+            const editorHtml = `<div class="rectifying-editor" id="rectifyingEditor"><div class="rectifying-editor-left"><span class="rectifying-editor-label">📊 月度校正因子 (${currentYear}-${(currentMonth + 1).toString().padStart(2, '0')})：</span><input type="number" id="rectifyingFactorInput" class="rectifying-editor-input" value="${currentFactor}" step="1"><span>分鐘</span><button id="saveRectifyingFactorBtn" class="btn btn-primary" style="padding:6px 16px;">💾 儲存校正因子</button></div><div class="rectifying-editor-hint">💡 校正因子將會累加到該月的總差值中，正值表示減少工時，負值表示增加工時</div></div>`;
+            const existingEditor = document.getElementById('rectifyingEditor');
+            if (existingEditor) existingEditor.remove();
+            tableContainer.insertAdjacentHTML('afterend', editorHtml);
+            document.getElementById('saveRectifyingFactorBtn')?.addEventListener('click', async () => { const val = parseInt(document.getElementById('rectifyingFactorInput').value) || 0; await setRectifyingFactor(currentYear, currentMonth, val); showToast(`已儲存校正因子: ${val} 分鐘`); await renderTable(); });
             document.querySelectorAll('.time-input:not([disabled])').forEach(inp => { inp.removeEventListener('change', handleTimeChange); inp.addEventListener('change', handleTimeChange); });
-            document.querySelectorAll('.leave-checkbox:not([disabled])').forEach(cb => { cb.removeEventListener('change', handleFullDayLeaveChange); cb.addEventListener('change', handleFullDayLeaveChange); });
+            document.querySelectorAll('.leave-checkbox:not([disabled])').forEach(cb => { cb.removeEventListener('change', handleLeaveChange); cb.addEventListener('change', handleLeaveChange); });
         }
 
+        function handleLeaveChange(e) {
+            if (!userConsented) { showToast("請先同意儲存授權", true); e.target.checked = false; return; }
+            const cb = e.target, date = cb.dataset.date, type = cb.dataset.type, isChecked = cb.checked;
+            const row = currentTableData.find(r => r.date === date);
+            if (!row || row.hasSpecialRemark || row.dateStatus !== 'editable' || row.holidayType === 'weekend' || row.holidayType === 'public') { cb.checked = false; showToast("無法修改請假狀態", true); return; }
+            const pendingKey = `${date}_is${type === 'am' ? 'Am' : 'Pm'}Off`;
+            const currentVal = type === 'am' ? row.isAmOff : row.isPmOff;
+            if (isChecked === currentVal) pendingChanges.delete(pendingKey);
+            else pendingChanges.set(pendingKey, isChecked);
+
+            // 更新本地狀態
+            if (type === 'am') row.isAmOff = isChecked; else row.isPmOff = isChecked;
+
+            // 若勾選早上請假，清除時間1、時間2的 pending 與 row.times
+            if (type === 'am' && isChecked) {
+                if (row.times.time1) { pendingChanges.set(`${date}_time1`, null); row.times.time1 = null; }
+                if (row.times.time2) { pendingChanges.set(`${date}_time2`, null); row.times.time2 = null; }
+            } else if (type === 'am' && !isChecked) {
+                // 取消早上請假時不需要自動恢復時間值，讓用戶手動輸入
+            }
+            // 若勾選下午請假，清除時間3、時間4的 pending 與 row.times
+            if (type === 'pm' && isChecked) {
+                if (row.times.time3) { pendingChanges.set(`${date}_time3`, null); row.times.time3 = null; }
+                if (row.times.time4) { pendingChanges.set(`${date}_time4`, null); row.times.time4 = null; }
+            }
+
+            row.holidayType = getHolidayType(row.weekday, row.holidayType === 'public', row.isAmOff, row.isPmOff, row.hasSpecialRemark);
+            row.expectedWH = getExpectedWH(row.weekday, row.isAmOff, row.isPmOff);
+            row.expectedOff = calcExpectedOff(row.times.time1, row.expectedWH, row.times.time2, row.times.time3);
+            row.actualWork = calcActualWork(row.times.time1, row.times.time2, row.times.time3, row.times.time4, row.isAmOff, row.isPmOff, row.weekday);
+            row.isEditable = row.dateStatus === 'editable' && !['weekend', 'public', 'special'].includes(row.holidayType) && !row.hasSpecialRemark;
+            renderTable();
+            updatePendingUI();
+        }
+
+        function handleTimeChange(e) {
+            if (!userConsented) { showToast("請先同意儲存授權", true); e.target.value = ""; return; }
+            const inp = e.target, date = inp.dataset.date; if (!date) return;
+            const field = inp.dataset.field, newVal = inp.value || null;
+            if (newVal && !/^([01]\d|2[0-3]):([0-5]\d)$/.test(newVal)) { showToast("時間格式錯誤", true); inp.value = ""; return; }
+            const row = currentTableData.find(r => r.date === date);
+            if (!row || !row.isEditable || row.hasSpecialRemark) return;
+            // 若該時間欄位因請假而被禁用，理論上不會觸發，但防止意外
+            if ((field === 'time1' || field === 'time2') && row.isAmOff) return;
+            if ((field === 'time3' || field === 'time4') && row.isPmOff) return;
+
+            const pendingKey = `${date}_${field}`;
+            const orig = row.times[field];
+            if (newVal === orig || (newVal === null && orig === null)) pendingChanges.delete(pendingKey);
+            else pendingChanges.set(pendingKey, newVal);
+            row.times[field] = newVal;
+            row.expectedOff = calcExpectedOff(row.times.time1, row.expectedWH, row.times.time2, row.times.time3);
+            row.actualWork = calcActualWork(row.times.time1, row.times.time2, row.times.time3, row.times.time4, row.isAmOff, row.isPmOff, row.weekday);
+            renderTable();
+            updatePendingUI();
+        }
+
+        function updatePendingUI() { pendingBar.style.display = pendingChanges.size ? 'flex' : 'none'; }
+        function clearPending() { pendingChanges.clear(); renderTable(); updatePendingUI(); }
+        async function saveChanges() {
+            if (!userConsented) { showToast("請先同意儲存授權", true); return; }
+            if (pendingChanges.size === 0) { showToast("無變更"); return; }
+            const byDate = new Map();
+            for (const [k, v] of pendingChanges.entries()) { const [date, field] = k.split('_'); if (!byDate.has(date)) byDate.set(date, {}); byDate.get(date)[field] = v; }
+            await withLoading(async () => {
+                for (const [date, upd] of byDate.entries()) {
+                    const final = {};
+                    if (upd.time1 !== undefined) final.time1 = upd.time1;
+                    if (upd.time2 !== undefined) final.time2 = upd.time2;
+                    if (upd.time3 !== undefined) final.time3 = upd.time3;
+                    if (upd.time4 !== undefined) final.time4 = upd.time4;
+                    if (upd.isAmOff !== undefined) final.isAmOff = upd.isAmOff;
+                    if (upd.isPmOff !== undefined) final.isPmOff = upd.isPmOff;
+                    const [y, m, d] = date.split('-'); await set(ref(db, `timesheet/${USER}/${y}/${m}/${d}`), { ...(await get(ref(db, `timesheet/${USER}/${y}/${m}/${d}`)).val() || {}), ...final });
+                    const row = currentTableData.find(r => r.date === date);
+                    if (row) { if (final.isAmOff !== undefined) row.isAmOff = final.isAmOff; if (final.isPmOff !== undefined) row.isPmOff = final.isPmOff; if (final.time1 !== undefined) row.times.time1 = final.time1; if (final.time2 !== undefined) row.times.time2 = final.time2; if (final.time3 !== undefined) row.times.time3 = final.time3; if (final.time4 !== undefined) row.times.time4 = final.time4; }
+                }
+                pendingChanges.clear();
+                await loadMonthData(currentYear, currentMonth);
+                await renderTable();
+                updatePendingUI();
+            }, "儲存中...");
+            showToast("✅ 已儲存");
+        }
+        async function showConsentPopup() {
+            const res = await Swal.fire({ title: '⚠️ 資料儲存同意書', html: `<div style="text-align:left;"><p>您將要修改並儲存工時資料至 Firebase 資料庫。</p><p>按下<strong>「我同意」</strong>代表您確認：</p><ul><li>您有權限修改這些資料</li><li>所有修改記錄將會被儲存</li><li>您同意承擔資料正確性的責任</li></ul><p>如果您不同意，將無法儲存任何變更。</p></div>`, icon: 'question', showCancelButton: true, confirmButtonText: '✅ 我同意，啟用儲存', cancelButtonText: '❌ 不同意' });
+            if (res.isConfirmed) { userConsented = true; consentBtn.disabled = true; consentBtn.textContent = '✅ 已同意並啟用儲存'; consentBtn.style.background = '#22c55e'; await renderTable(); showToast("已獲得儲存授權"); }
+            else showToast("未同意儲存條款", true);
+        }
+        consentBtn.addEventListener('click', showConsentPopup);
+        refreshBtn.addEventListener('click', async () => { if (pendingChanges.size && !(await Swal.fire({ title: '未儲存', text: '重新整理會遺失變更', icon: 'warning', showCancelButton: true }).isConfirmed)) return; clearPending(); await withLoading(() => loadMonthData(currentYear, currentMonth), "重新整理"); await renderTable(); showToast("已重新整理"); });
+        savePendingBtn.addEventListener('click', saveChanges);
+        cancelPendingBtn.addEventListener('click', () => { clearPending(); showToast("已放棄修改"); });
+        async function initAuth() { try { const res = await signInAnonymously(auth); USER = res.user.uid; logSuccess(`匿名登入 ${USER.substring(0, 8)}`); return true; } catch (e) { logError(e); await Swal.fire({ icon: 'error', title: '認證失敗', text: e.message }); location.reload(); return false; } }
+        onAuthStateChanged(auth, async (user) => {
+            if (user) {
+                isAuthenticated = true; USER = user.uid; userInfoSpan.textContent = `👤 ${USER.substring(0, 8)}...`; statusDot.className = 'status-dot'; statusText.textContent = '已連線'; consentBtn.disabled = false; consentBtn.textContent = '🔒 同意並啟用儲存'; refreshBtn.disabled = false;
+                await withLoading(async () => {
+                    renderYearTabs(); renderMonthTabs(); await loadMonthData(currentYear, currentMonth); await renderTable();
+                    onValue(ref(db, '.info/connected'), snap => { if (snap.val() === true && isAuthenticated) { statusDot.className = 'status-dot'; statusText.textContent = '線上'; } else if (isAuthenticated) { statusDot.className = 'status-dot off'; statusText.textContent = '離線'; } });
+                }, "載入工時表");
+            } else { isAuthenticated = false; USER = null; userInfoSpan.textContent = '未登入'; statusDot.className = 'status-dot off'; statusText.textContent = '需要認證'; consentBtn.disabled = true; await initAuth(); }
+        });
+        function renderYearTabs() {
+            const years = [2025, 2026, 2027, 2028, 2029, 2030];
+            yearTabsDiv.innerHTML = years.map(y => { const disabled = isYearDisabled(y); return `<button class="year-tab ${currentYear === y ? 'active' : ''} ${disabled ? 'disabled' : ''}" data-year="${y}" ${disabled ? 'disabled' : ''}>${y}</button>`; }).join('');
+            document.querySelectorAll('.year-tab:not([disabled])').forEach(btn => btn.addEventListener('click', () => switchYear(parseInt(btn.dataset.year))));
+        }
+        function renderMonthTabs() {
+            const months = ['1月', '2月', '3月', '4月', '5月', '6月', '7月', '8月', '9月', '10月', '11月', '12月'];
+            monthTabsDiv.innerHTML = months.map((m, idx) => { const disabled = isMonthDisabled(currentYear, idx); return `<button class="month-tab ${currentMonth === idx ? 'active' : ''} ${disabled ? 'disabled' : ''}" data-month="${idx}" ${disabled ? 'disabled' : ''}>${m}</button>`; }).join('');
+            document.querySelectorAll('.month-tab:not([disabled])').forEach(btn => btn.addEventListener('click', () => switchMonth(parseInt(btn.dataset.month))));
+        }
         async function switchYear(year) {
-            if (pendingChanges.size > 0 && !(await Swal.fire({ title: '未儲存', text: '切換年份將丟失未儲存修改', icon: 'warning', showCancelButton: true, confirmButtonText: '繼續' })).isConfirmed) return;
-            pendingChanges.clear();
-            currentYear = year;
+            if (isYearDisabled(year)) { showToast("該年份無有效資料", true); return; }
+            if (pendingChanges.size && !(await Swal.fire({ title: '未儲存', text: '切換年份將遺失未儲存修改', icon: 'warning', showCancelButton: true }).isConfirmed)) return;
+            pendingChanges.clear(); currentYear = year;
+            let first = 0; for (let m = 0; m < 12; m++) if (!isMonthDisabled(year, m)) { first = m; break; }
+            currentMonth = first;
             renderYearTabs(); renderMonthTabs();
         }
         async function switchMonth(idx) {
-            if (pendingChanges.size > 0 && !(await Swal.fire({ title: '未儲存', text: '切換月份將丟失未儲存修改', icon: 'warning', showCancelButton: true, confirmButtonText: '繼續' })).isConfirmed) return;
-            pendingChanges.clear();
-            currentMonth = idx;
-            await withLoading(() => loadMonthData(currentYear, currentMonth), "載入月份...");
-            renderTable(); renderMonthTabs(); updatePendingUI();
+            if (isMonthDisabled(currentYear, idx)) { showToast("該月份無有效資料", true); return; }
+            if (pendingChanges.size && !(await Swal.fire({ title: '未儲存', text: '切換月份將遺失未儲存修改', icon: 'warning', showCancelButton: true }).isConfirmed)) return;
+            pendingChanges.clear(); currentMonth = idx;
+            await withLoading(() => loadMonthData(currentYear, currentMonth), "載入月份"); await renderTable(); renderMonthTabs(); updatePendingUI();
         }
-        function renderYearTabs() { const years = [2025, 2026, 2027, 2028, 2029, 2030]; yearTabsDiv.innerHTML = years.map(y => `<button class="year-tab ${currentYear === y ? 'active' : ''}" data-year="${y}">${y}</button>`).join(''); document.querySelectorAll('.year-tab').forEach(btn => btn.addEventListener('click', () => switchYear(parseInt(btn.dataset.year)))); }
-        function renderMonthTabs() { const months = ['1月', '2月', '3月', '4月', '5月', '6月', '7月', '8月', '9月', '10月', '11月', '12月']; monthTabsDiv.innerHTML = months.map((m, idx) => `<button class="month-tab ${currentMonth === idx ? 'active' : ''}" data-month="${idx}">${m}</button>`).join(''); document.querySelectorAll('.month-tab').forEach(btn => btn.addEventListener('click', () => switchMonth(parseInt(btn.dataset.month)))); }
-
-        // 同意按鈕邏輯
-        async function showConsentPopup() {
-            const result = await Swal.fire({
-                title: '⚠️ 資料儲存同意書',
-                html: `<div style="text-align: left;">
-                    <p>您將要修改並儲存工時資料至 Firebase 資料庫。</p>
-                    <p>按下<strong>「我同意」</strong>代表您確認：</p>
-                    <ul style="text-align: left;">
-                        <li>您有權限修改這些資料</li>
-                        <li>所有修改記錄將會被儲存</li>
-                        <li>您同意承擔資料正確性的責任</li>
-                    </ul>
-                    <p>如果您不同意，將無法儲存任何變更。</p>
-                </div>`,
-                icon: 'question',
-                showCancelButton: true,
-                confirmButtonText: '✅ 我同意，啟用儲存',
-                cancelButtonText: '❌ 不同意',
-                allowOutsideClick: false
-            });
-            if (result.isConfirmed) {
-                userConsented = true;
-                consentBtn.disabled = true;
-                consentBtn.textContent = '✅ 已同意並啟用儲存';
-                consentBtn.style.background = '#22c55e';
-                consentBtn.style.opacity = '0.8';
-                showToast("已獲得儲存授權，您現在可以修改並儲存資料");
-                renderTable(); // 重新渲染啟用輸入框
-            } else {
-                showToast("您尚未同意儲存條款，無法儲存修改", true);
-            }
-        }
-
-        consentBtn.addEventListener('click', showConsentPopup);
-
-        refreshBtn.addEventListener('click', async () => {
-            if (pendingChanges.size > 0 && !(await Swal.fire({ title: '未儲存', text: '重新整理會遺失變更', icon: 'warning', showCancelButton: true }).isConfirmed)) return;
-            clearPending();
-            await withLoading(() => loadMonthData(currentYear, currentMonth), "重新整理");
-            renderTable();
-            showToast("已重新整理");
-        });
-        savePendingBtn.addEventListener('click', saveChanges);
-        cancelPendingBtn.addEventListener('click', () => { clearPending(); showToast("已放棄修改"); });
-
-        async function initAuth() {
-            statusText.textContent = '登入中...'; statusDot.className = 'status-dot pending';
-            try { const result = await signInAnonymously(auth); USER = result.user.uid; return true; } catch (e) { statusText.textContent = '認證失敗'; statusDot.className = 'status-dot off'; await Swal.fire({ icon: 'error', title: '認證失敗', text: e.message }).then(() => location.reload()); return false; }
-        }
-        onAuthStateChanged(auth, async (user) => {
-            if (user) {
-                isAuthenticated = true; USER = user.uid; userInfoSpan.textContent = `👤 ${USER.substring(0, 8)}...`;
-                statusDot.className = 'status-dot'; statusText.textContent = '已連線';
-                consentBtn.disabled = false;
-                consentBtn.textContent = '🔒 同意並啟用儲存';
-                await withLoading(async () => { renderYearTabs(); renderMonthTabs(); await loadMonthData(currentYear, currentMonth); renderTable(); onValue(ref(db, '.info/connected'), snap => { if (snap.val() === true && isAuthenticated) { statusDot.className = 'status-dot'; statusText.textContent = '線上'; } else if (!isAuthenticated) { } else { statusDot.className = 'status-dot off'; statusText.textContent = '離線'; } }); }, "載入工時表...");
-            } else { isAuthenticated = false; USER = null; userInfoSpan.textContent = '未登入'; statusDot.className = 'status-dot off'; statusText.textContent = '需要認證'; consentBtn.disabled = true; await initAuth(); }
-        });
     </script>
 </body>
 
