@@ -912,6 +912,7 @@
         onAuthStateChanged(auth, async (user) => {
             if (user) {
                 isAuthenticated = true; USER = user.uid; userInfoSpan.textContent = `👤 ${USER.substring(0, 8)}...`; statusDot.className = 'status-dot'; statusText.textContent = '已連線'; consentBtn.disabled = false; consentBtn.textContent = '🔒 同意並啟用儲存'; refreshBtn.disabled = false;
+                logInfo(`USER: ${USER}`);
                 await withLoading(async () => {
                     renderYearTabs(); renderMonthTabs(); await loadMonthData(currentYear, currentMonth); await renderTable();
                     onValue(ref(db, '.info/connected'), snap => { if (snap.val() === true && isAuthenticated) { statusDot.className = 'status-dot'; statusText.textContent = '線上'; } else if (isAuthenticated) { statusDot.className = 'status-dot off'; statusText.textContent = '離線'; } });
