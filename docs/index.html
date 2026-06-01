@@ -958,7 +958,11 @@
                     if (upd.isAmOff !== undefined) final.isAmOff = upd.isAmOff;
                     if (upd.isPmOff !== undefined) final.isPmOff = upd.isPmOff;
                     const [y, m, d] = date.split('-');
-                    await set(ref(db, `timesheet/${USER}/${y}/${m}/${d}`), { ...(await get(ref(db, `timesheet/${USER}/${y}/${m}/${d}`)).val() || {}), ...final });
+                    
+                    // 修正：先取得 snapshot，再取得 val()
+                    const snapshot = await get(ref(db, `timesheet/${USER}/${y}/${m}/${d}`));
+                    const existingData = snapshot.val() || {};  // 如果 null 則用空物件
+                    await set(ref(db, `timesheet/${USER}/${y}/${m}/${d}`), { ...existingData, ...final });
                 }
                 pendingChanges.clear();
                 await loadMonthData(currentYear, currentMonth);
