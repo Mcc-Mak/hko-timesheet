@@ -4,7 +4,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes">
-    <title>📋 HKO 工時表</title>
+    <title>📋 HKO 工時表 - 郵件登入</title>
     <script type="importmap">
         {
             "imports": {
@@ -130,6 +130,16 @@
             border: 1px solid #cbd5e1;
         }
 
+        .btn-danger {
+            background: #dc2626;
+            color: white;
+            border: none;
+        }
+
+        .btn-danger:hover {
+            background: #b91c1c;
+        }
+
         .status {
             display: flex;
             align-items: center;
@@ -160,6 +170,10 @@
             background: #eef2ff;
             padding: 4px 12px;
             border-radius: 30px;
+            font-weight: 500;
+            max-width: 250px;
+            overflow: hidden;
+            text-overflow: ellipsis;
         }
 
         .table-wrapper {
@@ -343,15 +357,6 @@
             font-weight: 500;
         }
 
-        body.loading-active {
-            pointer-events: none;
-            user-select: none;
-        }
-
-        body.loading-active .container {
-            opacity: 0.7;
-        }
-
         .month-title {
             margin: 0 0 16px 0;
             font-size: 1.3rem;
@@ -392,6 +397,64 @@
             text-align: center;
         }
 
+        .login-overlay {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0, 0, 0, 0.75);
+            backdrop-filter: blur(4px);
+            z-index: 2000;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .login-card {
+            background: white;
+            max-width: 420px;
+            width: 90%;
+            padding: 2rem;
+            border-radius: 32px;
+            box-shadow: 0 20px 35px rgba(0, 0, 0, 0.3);
+            text-align: center;
+        }
+
+        .login-card h3 {
+            margin-top: 0;
+            color: #1e4a76;
+        }
+
+        .login-card input {
+            width: 100%;
+            padding: 12px;
+            margin: 12px 0;
+            border: 1px solid #cbd5e1;
+            border-radius: 40px;
+            font-size: 1rem;
+        }
+
+        .login-card button {
+            width: 100%;
+            padding: 12px;
+            background: #1e4a76;
+            color: white;
+            border: none;
+            border-radius: 40px;
+            font-weight: bold;
+            cursor: pointer;
+            margin-top: 8px;
+        }
+
+        .login-card .switch-mode {
+            margin-top: 15px;
+            font-size: 0.85rem;
+            color: #1e4a76;
+            cursor: pointer;
+            text-decoration: underline;
+        }
+
         @media (max-width: 700px) {
             input.time-input {
                 width: 70px;
@@ -424,9 +487,12 @@
         <div class="header-section">
             <h2>📋 HKO 工時表</h2>
             <div class="status-group">
-                <div class="user-info" id="userInfo">尚未登入</div>
-                <div class="status" id="connStatus"><span class="status-dot pending" id="statusDot"></span><span
-                        id="statusText">初始化中...</span></div>
+                <div class="user-info" id="userInfo">未登入</div>
+                <div class="status" id="connStatus">
+                    <span class="status-dot pending" id="statusDot"></span>
+                    <span id="statusText">等待登入</span>
+                    <button id="logoutBtn" class="btn btn-danger" style="margin-left:auto;">🚪 登出</button>
+                </div>
             </div>
         </div>
         <div class="tab-bar" id="yearTabs"></div>
@@ -438,7 +504,7 @@
             </div>
         </div>
         <div id="tableContainer">
-            <div style="text-align:center;padding:60px;">🔐 載入設定中...</div>
+            <div style="text-align:center;padding:60px;">🔐 請先登入您的帳號</div>
         </div>
     </div>
     <div id="pendingBar" class="pending-changes" style="display:none;">⚡ 未儲存的修改 <button id="savePendingBtn">💾
@@ -447,17 +513,10 @@
     <script type="module">
         import { initializeApp } from "firebase/app";
         import { getDatabase, ref, get, set, onValue } from "firebase/database";
-        import { getAuth, signInAnonymously, onAuthStateChanged } from "firebase/auth";
+        import { getAuth, signInWithEmailAndPassword, createUserWithEmailAndPassword, onAuthStateChanged, signOut } from "firebase/auth";
 
         const LOG_PREFIX = "[HKO工時表]";
-        function logInfo(m, d = null) { console.log(`${LOG_PREFIX} ℹ️ ${m}`, d || ''); }
-        function logError(m, e = null) { console.error(`${LOG_PREFIX} ❌ ${m}`, e || ''); }
-        function logSuccess(m, d = null) { console.log(`${LOG_PREFIX} ✅ ${m}`, d || ''); }
-
-        function getQueryParam(param) {
-            const urlParams = new URLSearchParams(window.location.search);
-            return urlParams.get(param) || "";
-        }
+        let loadingSwalInstance = null;
 
         async function askFirebaseConfig() {
             const stored = sessionStorage.getItem('firebaseConfig');
@@ -478,24 +537,18 @@
             sessionStorage.setItem('firebaseConfig', JSON.stringify(cfg));
             return cfg;
         }
+
         const userConfig = await askFirebaseConfig();
         const app = initializeApp(userConfig);
         const db = getDatabase(app);
         const auth = getAuth(app);
 
-        // UTC+8 今天日期 (00:00)
         function getTodayUTC8() { const now = new Date(); const off = now.getTimezoneOffset(); const utc8 = new Date(now.getTime() + (off + 480) * 60000); return new Date(utc8.getFullYear(), utc8.getMonth(), utc8.getDate()); }
         const TODAY_UTC8 = getTodayUTC8();
-        const START_DATE = new Date(2025, 6, 11);   // 2025-07-11
-        // 有效區間：2025-07-11 ~ 本月最後一天 (含本月)
-        const END_DATE = new Date(TODAY_UTC8.getFullYear(), TODAY_UTC8.getMonth() + 1, 0); // 當月最後一天
+        const START_DATE = new Date(2025, 6, 11);
+        const END_DATE = new Date(TODAY_UTC8.getFullYear(), TODAY_UTC8.getMonth() + 1, 0);
 
-        function isDateInRange(year, month, day = 1) {
-            const checkDate = new Date(year, month, day);
-            return checkDate >= START_DATE && checkDate <= END_DATE;
-        }
         function isYearDisabled(year) {
-            // 年份若完全不在 [2025-07, 當月] 範圍則禁用
             const firstDayOfYear = new Date(year, 0, 1);
             const lastDayOfYear = new Date(year, 11, 31);
             return !(firstDayOfYear <= END_DATE && lastDayOfYear >= START_DATE);
@@ -506,26 +559,16 @@
             return !(firstDay <= END_DATE && lastDay >= START_DATE);
         }
 
-        // 初始化: 預設選取「當前月份」(今天所在的月份)，但不可超過 END_DATE 且必須 >= START_DATE
         let currentYear = TODAY_UTC8.getFullYear();
         let currentMonth = TODAY_UTC8.getMonth();
-        // 確保選取的月份在有效範圍內
         if (isMonthDisabled(currentYear, currentMonth)) {
-            // 若當前月份被禁用(例如未來月份不該發生，但以防萬一)，回退到最後一個可用月份
-            let found = false;
             for (let y = currentYear; y >= START_DATE.getFullYear(); y--) {
                 for (let m = 11; m >= 0; m--) {
                     if (!isMonthDisabled(y, m)) {
-                        currentYear = y; currentMonth = m; found = true; break;
+                        currentYear = y; currentMonth = m;
+                        break;
                     }
                 }
-                if (found) break;
-            }
-        }
-        // 確保年份也有效
-        if (isYearDisabled(currentYear)) {
-            for (let y = END_DATE.getFullYear(); y >= START_DATE.getFullYear(); y--) {
-                if (!isYearDisabled(y)) { currentYear = y; break; }
             }
         }
 
@@ -533,7 +576,6 @@
         let pendingChanges = new Map();
         let activeListeners = [];
         let isAuthenticated = false;
-        let loadingActive = false;
         let USER = null;
         let userConsented = false;
 
@@ -548,11 +590,49 @@
         const statusDot = document.getElementById('statusDot');
         const statusText = document.getElementById('statusText');
         const userInfoSpan = document.getElementById('userInfo');
+        const logoutBtn = document.getElementById('logoutBtn');
 
-        async function showLoading(msg) { if (loadingActive) return; loadingActive = true; document.body.classList.add('loading-active'); Swal.fire({ title: msg, allowOutsideClick: false, allowEscapeKey: false, showConfirmButton: false, didOpen: () => Swal.showLoading() }); }
-        function hideLoading() { if (!loadingActive) return; loadingActive = false; document.body.classList.remove('loading-active'); if (Swal.isVisible()) Swal.close(); }
-        async function withLoading(op, msg) { try { await showLoading(msg); const res = await op(); hideLoading(); return res; } catch (e) { hideLoading(); throw e; } }
-        function showToast(msg, isErr = false) { Swal.fire({ icon: isErr ? 'error' : 'success', title: msg, toast: true, position: 'bottom-end', showConfirmButton: false, timer: 2300 }); }
+        // 顯示 loading 彈窗（不 await 彈窗本身）
+        function showLoadingBlocking(msg) {
+            if (loadingSwalInstance) {
+                loadingSwalInstance.update({ title: msg });
+                return;
+            }
+            loadingSwalInstance = Swal.fire({
+                title: msg,
+                allowOutsideClick: false,
+                allowEscapeKey: false,
+                showConfirmButton: false,
+                didOpen: () => {
+                    Swal.showLoading();
+                }
+            });
+        }
+
+        // 關閉 loading 彈窗
+        async function hideLoadingBlocking() {
+            if (loadingSwalInstance) {
+                await loadingSwalInstance.close();
+                loadingSwalInstance = null;
+            }
+        }
+
+        // 執行帶有 loading 阻擋的操作
+        async function withBlockingLoading(op, msg) {
+            showLoadingBlocking(msg);
+            try {
+                const res = await op();
+                await hideLoadingBlocking();
+                return res;
+            } catch (e) {
+                await hideLoadingBlocking();
+                throw e;
+            }
+        }
+
+        function showToast(msg, isErr = false) {
+            Swal.fire({ icon: isErr ? 'error' : 'success', title: msg, toast: true, position: 'bottom-end', showConfirmButton: false, timer: 2300 });
+        }
 
         function timeToMin(t) { if (!t || typeof t !== 'string' || !t.includes(':')) return 0; const [h, m] = t.split(':').map(Number); return (isNaN(h) || isNaN(m)) ? 0 : h * 60 + m; }
         function minToTime(min) { const absMin = Math.abs(min); const hours = Math.floor(absMin / 60); const minutes = absMin % 60; const sign = min < 0 ? '-' : ''; return `${sign}${hours.toString().padStart(2, '0')}:${minutes.toString().padStart(2, '0')}`; }
@@ -656,28 +736,6 @@
                 const dateStatus = (new Date(year, month, d) > TODAY_UTC8) ? 'future' : (new Date(year, month, d) < START_DATE ? 'historical' : 'editable');
                 const isEditable = (dateStatus === 'editable' && holidayType !== 'weekend' && holidayType !== 'public' && !hasSpecialRemark);
                 rows.push({ date: dateStr, weekday, times, isAmOff, isPmOff, holidayType, hasDataInFirebase, expectedWH, expectedOff, actualWork, isEditable, dateStatus, hasSpecialRemark, remark });
-                const unsubscribe = onValue(ref(db, dayPath), (snap) => {
-                    if (snap.exists() && isAuthenticated && pendingChanges.size === 0) {
-                        const f = snap.val();
-                        const row = rows.find(r => r.date === dateStr);
-                        if (row) {
-                            row.times = { time1: f.time1 ?? null, time2: f.time2 ?? null, time3: f.time3 ?? null, time4: f.time4 ?? null };
-                            row.isAmOff = f.isAmOff === true; row.isPmOff = f.isPmOff === true;
-                            const fr = f.remark || null; const hasSpecial = !!(fr && fr.trim());
-                            row.holidayType = getHolidayType(row.weekday, publicHolidays.has(dateStr), row.isAmOff, row.isPmOff, hasSpecial);
-                            row.hasSpecialRemark = hasSpecial; row.remark = fr;
-                            row.expectedWH = getExpectedWH(row.weekday, row.isAmOff, row.isPmOff);
-                            row.expectedOff = calcExpectedOff(row.times.time1, row.expectedWH, row.times.time2, row.times.time3);
-                            row.actualWork = calcActualWork(row.times.time1, row.times.time2, row.times.time3, row.times.time4, row.isAmOff, row.isPmOff, row.weekday);
-                            row.isEditable = (row.dateStatus === 'editable' && row.holidayType !== 'weekend' && row.holidayType !== 'public' && !row.hasSpecialRemark);
-                            if (currentYear === year && currentMonth === month) renderTable();
-                        }
-                    } else if (!snap.exists() && isAuthenticated) {
-                        const row = rows.find(r => r.date === dateStr);
-                        if (row && row.hasDataInFirebase !== false) { row.hasDataInFirebase = false; if (!row.isAmOff && !row.isPmOff) row.times = { time1: null, time2: null, time3: null, time4: null }; row.actualWork = null; if (currentYear === year && currentMonth === month) renderTable(); }
-                    }
-                });
-                activeListeners.push(unsubscribe);
             }
             currentTableData = rows;
             return rows;
@@ -700,6 +758,7 @@
             }
             return totalExpected - totalActual;
         }
+
         async function saveCumulativeDiffToFirebase(diffMin) {
             if (!USER || !userConsented) return;
             const monthStr = (currentMonth + 1).toString().padStart(2, '0');
@@ -708,28 +767,40 @@
             try { const snap = await get(offsetRef); if (snap.exists()) existingFactor = snap.val().rectifyingFactor || 0; } catch (e) { }
             await set(offsetRef, { differenceMinutes: diffMin, differenceFormatted: `${diffMin < 0 ? "要加班" : "已加班"} ${minToTime(Math.abs(diffMin))}`, rectifyingFactor: existingFactor, lastUpdated: new Date().toISOString() });
         }
+
         async function getRectifyingFactor(year, month) { if (!USER) return 0; try { const snap = await get(ref(db, `offset/${USER}/${year}/${(month + 1).toString().padStart(2, '0')}`)); return snap.exists() ? snap.val().rectifyingFactor || 0 : 0; } catch (e) { return 0; } }
         async function setRectifyingFactor(year, month, factor) { if (!USER || !userConsented) return; const path = `offset/${USER}/${year}/${(month + 1).toString().padStart(2, '0')}`; const snap = await get(ref(db, path)); const existing = snap.exists() ? snap.val() : {}; await set(ref(db, path), { ...existing, rectifyingFactor: factor, lastUpdated: new Date().toISOString() }); }
-        async function calculateTotalCumulativeDiffFromJul2025() {
-            if (!USER) return 0;
-            let total = 0;
-            const startY = 2025, startM = 6; // 7月 index=6
-            const endY = currentYear, endM = currentMonth;
-            for (let y = startY; y <= endY; y++) {
-                const mStart = (y === startY) ? startM : 0;
-                const mEnd = (y === endY) ? endM : 11;
-                for (let m = mStart; m <= mEnd; m++) {
-                    const monthStr = (m + 1).toString().padStart(2, '0');
-                    try {
-                        const snap = await get(ref(db, `offset/${USER}/${y}/${monthStr}`));
-                        if (snap.exists()) {
-                            const data = snap.val();
-                            total += (data.differenceMinutes || 0) + (data.rectifyingFactor || 0);
-                        }
-                    } catch (e) { }
-                }
-            }
-            return total;
+        async function calculateTotalCumulativeDiffFromJul2025() { if (!USER) return 0; let total = 0; for (let y = 2025; y <= currentYear; y++) { for (let m = (y === 2025 ? 6 : 0); m <= (y === currentYear ? currentMonth : 11); m++) { try { const snap = await get(ref(db, `offset/${USER}/${y}/${(m + 1).toString().padStart(2, '0')}`)); if (snap.exists()) { const data = snap.val(); total += (data.differenceMinutes || 0) + (data.rectifyingFactor || 0); } } catch (e) { } } } return total; }
+
+        function renderYearTabs() {
+            const years = [2025, 2026, 2027, 2028, 2029, 2030];
+            yearTabsDiv.innerHTML = years.map(y => { const disabled = isYearDisabled(y); return `<button class="year-tab ${currentYear === y ? 'active' : ''} ${disabled ? 'disabled' : ''}" data-year="${y}" ${disabled ? 'disabled' : ''}>${y}</button>`; }).join('');
+            document.querySelectorAll('.year-tab:not([disabled])').forEach(btn => btn.addEventListener('click', () => switchYear(parseInt(btn.dataset.year))));
+        }
+
+        function renderMonthTabs() {
+            const months = ['1月', '2月', '3月', '4月', '5月', '6月', '7月', '8月', '9月', '10月', '11月', '12月'];
+            monthTabsDiv.innerHTML = months.map((m, idx) => { const disabled = isMonthDisabled(currentYear, idx); return `<button class="month-tab ${currentMonth === idx ? 'active' : ''} ${disabled ? 'disabled' : ''}" data-month="${idx}" ${disabled ? 'disabled' : ''}>${m}</button>`; }).join('');
+            document.querySelectorAll('.month-tab:not([disabled])').forEach(btn => btn.addEventListener('click', () => switchMonth(parseInt(btn.dataset.month))));
+        }
+
+        async function switchYear(year) {
+            if (isYearDisabled(year)) { showToast("該年份無有效資料", true); return; }
+            if (pendingChanges.size && !(await Swal.fire({ title: '未儲存', text: '切換年份將遺失未儲存修改', icon: 'warning', showCancelButton: true }).isConfirmed)) return;
+            pendingChanges.clear(); currentYear = year;
+            let first = 0; for (let m = 0; m < 12; m++) if (!isMonthDisabled(year, m)) { first = m; break; }
+            currentMonth = first;
+            renderYearTabs(); renderMonthTabs();
+        }
+
+        async function switchMonth(idx) {
+            if (isMonthDisabled(currentYear, idx)) { showToast("該月份無有效資料", true); return; }
+            if (pendingChanges.size && !(await Swal.fire({ title: '未儲存', text: '切換月份將遺失未儲存修改', icon: 'warning', showCancelButton: true }).isConfirmed)) return;
+            pendingChanges.clear(); currentMonth = idx;
+            await withBlockingLoading(() => loadMonthData(currentYear, currentMonth), "載入月份資料...");
+            await renderTable();
+            renderMonthTabs();
+            updatePendingUI();
         }
 
         async function renderTable() {
@@ -761,23 +832,19 @@
                 else if (row.dateStatus === 'future') badgeHtml = '<span class="badge badge-future">未來</span>';
                 else if (!row.hasDataInFirebase) badgeHtml = '<span class="badge badge-missing">缺失</span>';
                 else badgeHtml = '<span class="badge badge-data">已有</span>';
-                const isSpecialRow = row.hasSpecialRemark;
-                const isEditableTime = row.isEditable && userConsented && row.dateStatus === 'editable' && !isSpecialRow && row.holidayType !== 'public' && row.holidayType !== 'special' && row.holidayType !== 'weekend';
 
-                // 根據請假狀態控制時間輸入欄位啟用/禁用，且若勾選早上請假則強制清空時間1、2；下午請假清空時間3、4
+                const isEditableTime = row.isEditable && userConsented && row.dateStatus === 'editable' && !row.hasSpecialRemark && row.holidayType !== 'public' && row.holidayType !== 'special' && row.holidayType !== 'weekend';
                 const time1Disabled = !isEditableTime || (pendingAm === true);
                 const time2Disabled = !isEditableTime || (pendingAm === true);
                 const time3Disabled = !isEditableTime || (pendingPm === true);
                 const time4Disabled = !isEditableTime || (pendingPm === true);
-
-                // 若 pending 中因為請假而清空，顯示時需反映 null
                 const finalTime1 = (pendingAm === true) ? null : displayTimes.time1;
                 const finalTime2 = (pendingAm === true) ? null : displayTimes.time2;
                 const finalTime3 = (pendingPm === true) ? null : displayTimes.time3;
                 const finalTime4 = (pendingPm === true) ? null : displayTimes.time4;
+                const amDisabled = (!userConsented) || row.dateStatus !== 'editable' || row.hasSpecialRemark || row.holidayType === 'weekend' || row.holidayType === 'public';
+                const pmDisabled = (!userConsented) || row.dateStatus !== 'editable' || row.hasSpecialRemark || row.holidayType === 'weekend' || row.holidayType === 'public';
 
-                const amDisabled = (!userConsented) || row.dateStatus !== 'editable' || isSpecialRow || row.holidayType === 'weekend' || row.holidayType === 'public';
-                const pmDisabled = (!userConsented) || row.dateStatus !== 'editable' || isSpecialRow || row.holidayType === 'weekend' || row.holidayType === 'public';
                 let rowClass = '';
                 if (row.holidayType === 'weekend') rowClass = 'weekend-row';
                 else if (row.holidayType === 'public') rowClass = 'public-holiday-row';
@@ -789,6 +856,7 @@
                 else if (row.dateStatus === 'future') rowClass = 'future-row';
                 else if (row.hasDataInFirebase) rowClass = 'data-present-row';
                 else rowClass = 'missing-data-row';
+
                 html += `<tr class="${rowClass}">`;
                 html += `<td style="white-space:nowrap;">${row.date}${row.remark ? `<span style="font-size:0.65rem; margin-left:4px; color:#e11d48;" title="${(row.remark || '').replace(/"/g, '&quot;')}">📝</span>` : ''}</td>`;
                 html += `<td>${badgeHtml}</td><td>${row.weekday}</td>`;
@@ -801,21 +869,26 @@
                 html += `<td class="readonly-cell">${formatTimeDisplay(expectedWH)}</td>`;
                 html += `<td class="readonly-cell">${(actualWorkDisplay && actualWorkDisplay !== "00:00") ? actualWorkDisplay : (row.holidayType === 'public' || row.holidayType === 'special' ? formatTimeDisplay("00:00") : (actualWorkDisplay === "00:00" ? "—" : (actualWorkDisplay || "—")))}</td>`;
                 html += `<td class="readonly-cell">${formatTimeDisplay(expectedOff)}</td>`;
-                html += `<\/tr>`;
+                html += `</tr>`;
             }
             const monthDiff = computeCumulativeDifference();
             await saveCumulativeDiffToFirebase(monthDiff);
             const totalOffset = await calculateTotalCumulativeDiffFromJul2025();
             const totalOffsetText = `${totalOffset < 0 ? "要加班" : "已加班"} ${minToTime(Math.abs(totalOffset))}`;
-            html += `<tr class="footer-row"><td colspan="9" style="text-align:right;font-weight:bold;">累計總差值 (2025-07 至本月，含校正)</td><td colspan="3" style="font-weight:bold;">${totalOffsetText}</td></tr>`;
-            html += `</tbody></div>`;
+            html += `<tr class="footer-row"><td colspan="9" style="text-align:right;font-weight:bold;">累計總差值 (2025-07 至本月，含校正)</td><td colspan="3" style="font-weight:bold;">${totalOffsetText}NonNull</td>`;
+            html += `</tbody></table></div>`;
             tableContainer.innerHTML = html;
             const currentFactor = await getRectifyingFactor(currentYear, currentMonth);
             const editorHtml = `<div class="rectifying-editor" id="rectifyingEditor"><div class="rectifying-editor-left"><span class="rectifying-editor-label">📊 月度校正因子 (${currentYear}-${(currentMonth + 1).toString().padStart(2, '0')})：</span><input type="number" id="rectifyingFactorInput" class="rectifying-editor-input" value="${currentFactor}" step="1"><span>分鐘</span><button id="saveRectifyingFactorBtn" class="btn btn-primary" style="padding:6px 16px;">💾 儲存校正因子</button></div><div class="rectifying-editor-hint">💡 校正因子將會累加到該月的總差值中，正值表示減少工時，負值表示增加工時</div></div>`;
             const existingEditor = document.getElementById('rectifyingEditor');
             if (existingEditor) existingEditor.remove();
             tableContainer.insertAdjacentHTML('afterend', editorHtml);
-            document.getElementById('saveRectifyingFactorBtn')?.addEventListener('click', async () => { const val = parseInt(document.getElementById('rectifyingFactorInput').value) || 0; await setRectifyingFactor(currentYear, currentMonth, val); showToast(`已儲存校正因子: ${val} 分鐘`); await renderTable(); });
+            document.getElementById('saveRectifyingFactorBtn')?.addEventListener('click', async () => {
+                const val = parseInt(document.getElementById('rectifyingFactorInput').value) || 0;
+                await setRectifyingFactor(currentYear, currentMonth, val);
+                showToast(`已儲存校正因子: ${val} 分鐘`);
+                await renderTable();
+            });
             document.querySelectorAll('.time-input:not([disabled])').forEach(inp => { inp.removeEventListener('change', handleTimeChange); inp.addEventListener('change', handleTimeChange); });
             document.querySelectorAll('.leave-checkbox:not([disabled])').forEach(cb => { cb.removeEventListener('change', handleLeaveChange); cb.addEventListener('change', handleLeaveChange); });
         }
@@ -829,23 +902,15 @@
             const currentVal = type === 'am' ? row.isAmOff : row.isPmOff;
             if (isChecked === currentVal) pendingChanges.delete(pendingKey);
             else pendingChanges.set(pendingKey, isChecked);
-
-            // 更新本地狀態
             if (type === 'am') row.isAmOff = isChecked; else row.isPmOff = isChecked;
-
-            // 若勾選早上請假，清除時間1、時間2的 pending 與 row.times
             if (type === 'am' && isChecked) {
                 if (row.times.time1) { pendingChanges.set(`${date}_time1`, null); row.times.time1 = null; }
                 if (row.times.time2) { pendingChanges.set(`${date}_time2`, null); row.times.time2 = null; }
-            } else if (type === 'am' && !isChecked) {
-                // 取消早上請假時不需要自動恢復時間值，讓用戶手動輸入
             }
-            // 若勾選下午請假，清除時間3、時間4的 pending 與 row.times
             if (type === 'pm' && isChecked) {
                 if (row.times.time3) { pendingChanges.set(`${date}_time3`, null); row.times.time3 = null; }
                 if (row.times.time4) { pendingChanges.set(`${date}_time4`, null); row.times.time4 = null; }
             }
-
             row.holidayType = getHolidayType(row.weekday, row.holidayType === 'public', row.isAmOff, row.isPmOff, row.hasSpecialRemark);
             row.expectedWH = getExpectedWH(row.weekday, row.isAmOff, row.isPmOff);
             row.expectedOff = calcExpectedOff(row.times.time1, row.expectedWH, row.times.time2, row.times.time3);
@@ -862,10 +927,8 @@
             if (newVal && !/^([01]\d|2[0-3]):([0-5]\d)$/.test(newVal)) { showToast("時間格式錯誤", true); inp.value = ""; return; }
             const row = currentTableData.find(r => r.date === date);
             if (!row || !row.isEditable || row.hasSpecialRemark) return;
-            // 若該時間欄位因請假而被禁用，理論上不會觸發，但防止意外
             if ((field === 'time1' || field === 'time2') && row.isAmOff) return;
             if ((field === 'time3' || field === 'time4') && row.isPmOff) return;
-
             const pendingKey = `${date}_${field}`;
             const orig = row.times[field];
             if (newVal === orig || (newVal === null && orig === null)) pendingChanges.delete(pendingKey);
@@ -879,12 +942,13 @@
 
         function updatePendingUI() { pendingBar.style.display = pendingChanges.size ? 'flex' : 'none'; }
         function clearPending() { pendingChanges.clear(); renderTable(); updatePendingUI(); }
+
         async function saveChanges() {
             if (!userConsented) { showToast("請先同意儲存授權", true); return; }
             if (pendingChanges.size === 0) { showToast("無變更"); return; }
             const byDate = new Map();
             for (const [k, v] of pendingChanges.entries()) { const [date, field] = k.split('_'); if (!byDate.has(date)) byDate.set(date, {}); byDate.get(date)[field] = v; }
-            await withLoading(async () => {
+            await withBlockingLoading(async () => {
                 for (const [date, upd] of byDate.entries()) {
                     const final = {};
                     if (upd.time1 !== undefined) final.time1 = upd.time1;
@@ -893,71 +957,149 @@
                     if (upd.time4 !== undefined) final.time4 = upd.time4;
                     if (upd.isAmOff !== undefined) final.isAmOff = upd.isAmOff;
                     if (upd.isPmOff !== undefined) final.isPmOff = upd.isPmOff;
-                    const [y, m, d] = date.split('-'); await set(ref(db, `timesheet/${USER}/${y}/${m}/${d}`), { ...(await get(ref(db, `timesheet/${USER}/${y}/${m}/${d}`)).val() || {}), ...final });
-                    const row = currentTableData.find(r => r.date === date);
-                    if (row) { if (final.isAmOff !== undefined) row.isAmOff = final.isAmOff; if (final.isPmOff !== undefined) row.isPmOff = final.isPmOff; if (final.time1 !== undefined) row.times.time1 = final.time1; if (final.time2 !== undefined) row.times.time2 = final.time2; if (final.time3 !== undefined) row.times.time3 = final.time3; if (final.time4 !== undefined) row.times.time4 = final.time4; }
+                    const [y, m, d] = date.split('-');
+                    await set(ref(db, `timesheet/${USER}/${y}/${m}/${d}`), { ...(await get(ref(db, `timesheet/${USER}/${y}/${m}/${d}`)).val() || {}), ...final });
                 }
                 pendingChanges.clear();
                 await loadMonthData(currentYear, currentMonth);
                 await renderTable();
                 updatePendingUI();
-            }, "儲存中...");
+            }, "儲存變更中...");
             showToast("✅ 已儲存");
         }
-        async function showConsentPopup() {
-            const res = await Swal.fire({ title: '⚠️ 資料儲存同意書', html: `<div style="text-align:left;"><p>您將要修改並儲存工時資料至 Firebase 資料庫。</p><p>按下<strong>「我同意」</strong>代表您確認：</p><ul><li>您有權限修改這些資料</li><li>所有修改記錄將會被儲存</li><li>您同意承擔資料正確性的責任</li></ul><p>如果您不同意，將無法儲存任何變更。</p></div>`, icon: 'question', showCancelButton: true, confirmButtonText: '✅ 我同意，啟用儲存', cancelButtonText: '❌ 不同意' });
-            if (res.isConfirmed) { userConsented = true; consentBtn.disabled = true; consentBtn.textContent = '✅ 已同意並啟用儲存'; consentBtn.style.background = '#22c55e'; await renderTable(); showToast("已獲得儲存授權"); }
-            else showToast("未同意儲存條款", true);
+
+        let currentOverlay = null;
+
+        function showLoginModal() {
+            if (currentOverlay) return;
+            const overlay = document.createElement('div');
+            overlay.className = 'login-overlay';
+            let isLoginMode = true;
+
+            const renderModal = () => {
+                overlay.innerHTML = `
+                    <div class="login-card">
+                        <h3>${isLoginMode ? '🔐 登入帳號' : '📝 註冊新帳號'}</h3>
+                        <input type="email" id="loginEmail" placeholder="電子郵件" autocomplete="email">
+                        <input type="password" id="loginPassword" placeholder="密碼" autocomplete="${isLoginMode ? 'current-password' : 'new-password'}">
+                        <button id="submitBtn">${isLoginMode ? '登入' : '註冊'}</button>
+                        <div class="switch-mode" id="switchMode">${isLoginMode ? '沒有帳號？立即註冊' : '已有帳號？返回登入'}</div>
+                    </div>
+                `;
+
+                const submitBtn = overlay.querySelector('#submitBtn');
+                const switchBtn = overlay.querySelector('#switchMode');
+
+                if (submitBtn) {
+                    submitBtn.addEventListener('click', async () => {
+                        const email = overlay.querySelector('#loginEmail').value.trim();
+                        const password = overlay.querySelector('#loginPassword').value;
+                        if (!email || !password) { showToast('請填寫電子郵件和密碼', true); return; }
+                        try {
+                            await withBlockingLoading(async () => {
+                                if (isLoginMode) {
+                                    await signInWithEmailAndPassword(auth, email, password);
+                                } else {
+                                    await createUserWithEmailAndPassword(auth, email, password);
+                                    showToast('註冊成功，已自動登入');
+                                }
+                            }, isLoginMode ? "登入中..." : "註冊中...");
+                            overlay.remove();
+                            currentOverlay = null;
+                        } catch (err) {
+                            let msg = err.message;
+                            if (err.code === 'auth/email-already-in-use') msg = '此電子郵件已被註冊';
+                            else if (err.code === 'auth/wrong-password') msg = '密碼錯誤';
+                            else if (err.code === 'auth/user-not-found') msg = '找不到此使用者';
+                            else if (err.code === 'auth/weak-password') msg = '密碼強度不足 (至少6碼)';
+                            else if (err.code === 'auth/invalid-email') msg = '無效的電子郵件格式';
+                            showToast(msg, true);
+                        }
+                    });
+                }
+
+                if (switchBtn) {
+                    switchBtn.addEventListener('click', () => {
+                        isLoginMode = !isLoginMode;
+                        renderModal();
+                    });
+                }
+            };
+
+            renderModal();
+            document.body.appendChild(overlay);
+            currentOverlay = overlay;
         }
-        consentBtn.addEventListener('click', showConsentPopup);
-        refreshBtn.addEventListener('click', async () => { if (pendingChanges.size && !(await Swal.fire({ title: '未儲存', text: '重新整理會遺失變更', icon: 'warning', showCancelButton: true }).isConfirmed)) return; clearPending(); await withLoading(() => loadMonthData(currentYear, currentMonth), "重新整理"); await renderTable(); showToast("已重新整理"); });
+
+        async function doLogout() {
+            await signOut(auth);
+            userConsented = false;
+            isAuthenticated = false;
+            USER = null;
+            pendingChanges.clear();
+            userInfoSpan.textContent = '未登入';
+            statusText.textContent = '已登出';
+            logoutBtn.style.display = 'none';
+            consentBtn.disabled = true;
+            refreshBtn.disabled = true;
+            tableContainer.innerHTML = '<div style="text-align:center;padding:60px;">🔐 請先登入您的帳號</div>';
+            showLoginModal();
+        }
+
+        onAuthStateChanged(auth, async (user) => {
+            if (user && user.email) {
+                if (currentOverlay) {
+                    currentOverlay.remove();
+                    currentOverlay = null;
+                }
+                isAuthenticated = true;
+                USER = user.uid;
+                userInfoSpan.textContent = `📧 ${user.email}`;
+                statusDot.className = 'status-dot';
+                statusText.textContent = '已登入';
+                logoutBtn.style.display = 'inline-flex';
+                consentBtn.disabled = false;
+                refreshBtn.disabled = false;
+                await withBlockingLoading(async () => {
+                    renderYearTabs();
+                    renderMonthTabs();
+                    await loadMonthData(currentYear, currentMonth);
+                    await renderTable();
+                    onValue(ref(db, '.info/connected'), snap => {
+                        if (snap.val() === true && isAuthenticated) {
+                            statusDot.className = 'status-dot';
+                            statusText.textContent = '線上';
+                        } else if (isAuthenticated) {
+                            statusDot.className = 'status-dot off';
+                            statusText.textContent = '離線';
+                        }
+                    });
+                }, "載入工時表...");
+            } else {
+                isAuthenticated = false;
+                USER = null;
+                userInfoSpan.textContent = '未登入';
+                logoutBtn.style.display = 'none';
+                consentBtn.disabled = true;
+                refreshBtn.disabled = true;
+                tableContainer.innerHTML = '<div style="text-align:center;padding:60px;">🔐 請先登入您的帳號</div>';
+                if (!currentOverlay) {
+                    showLoginModal();
+                }
+            }
+        });
+
+        logoutBtn.addEventListener('click', doLogout);
+        consentBtn.addEventListener('click', async () => { userConsented = true; consentBtn.disabled = true; consentBtn.textContent = '✅ 已同意並啟用儲存'; renderTable(); showToast("已獲得儲存授權"); });
+        refreshBtn.addEventListener('click', async () => {
+            if (pendingChanges.size && !(await Swal.fire({ title: '未儲存', text: '重新整理會遺失變更', icon: 'warning', showCancelButton: true }).isConfirmed)) return;
+            clearPending();
+            await withBlockingLoading(() => loadMonthData(currentYear, currentMonth), "重新整理中...");
+            await renderTable();
+            showToast("已重新整理");
+        });
         savePendingBtn.addEventListener('click', saveChanges);
         cancelPendingBtn.addEventListener('click', () => { clearPending(); showToast("已放棄修改"); });
-        async function initAuth() {
-            try {
-                const res = await signInAnonymously(auth);
-                const userId = getQueryParam('userId');
-                const paramUserId = userId != "" ? userId : res.user.uid;
-                USER = paramUserId;
-                logSuccess(`匿名登入 ${USER.substring(0, 8)}`);
-                return true;
-            } catch (e) { logError(e); await Swal.fire({ icon: 'error', title: '認證失敗', text: e.message }); location.reload(); return false; }
-        }
-        onAuthStateChanged(auth, async (user) => {
-            if (user) {
-                const userId = getQueryParam('userId');
-                const paramUserId = userId != "" ? userId : user.uid;
-                isAuthenticated = true; USER = paramUserId; userInfoSpan.textContent = `👤 ${USER.substring(0, 8)}...`; statusDot.className = 'status-dot'; statusText.textContent = '已連線'; consentBtn.disabled = false; consentBtn.textContent = '🔒 同意並啟用儲存'; refreshBtn.disabled = false;
-                await withLoading(async () => {
-                    renderYearTabs(); renderMonthTabs(); await loadMonthData(currentYear, currentMonth); await renderTable();
-                    onValue(ref(db, '.info/connected'), snap => { if (snap.val() === true && isAuthenticated) { statusDot.className = 'status-dot'; statusText.textContent = '線上'; } else if (isAuthenticated) { statusDot.className = 'status-dot off'; statusText.textContent = '離線'; } });
-                }, "載入工時表");
-            } else { isAuthenticated = false; USER = null; userInfoSpan.textContent = '未登入'; statusDot.className = 'status-dot off'; statusText.textContent = '需要認證'; consentBtn.disabled = true; await initAuth(); }
-        });
-        function renderYearTabs() {
-            const years = [2025, 2026, 2027, 2028, 2029, 2030];
-            yearTabsDiv.innerHTML = years.map(y => { const disabled = isYearDisabled(y); return `<button class="year-tab ${currentYear === y ? 'active' : ''} ${disabled ? 'disabled' : ''}" data-year="${y}" ${disabled ? 'disabled' : ''}>${y}</button>`; }).join('');
-            document.querySelectorAll('.year-tab:not([disabled])').forEach(btn => btn.addEventListener('click', () => switchYear(parseInt(btn.dataset.year))));
-        }
-        function renderMonthTabs() {
-            const months = ['1月', '2月', '3月', '4月', '5月', '6月', '7月', '8月', '9月', '10月', '11月', '12月'];
-            monthTabsDiv.innerHTML = months.map((m, idx) => { const disabled = isMonthDisabled(currentYear, idx); return `<button class="month-tab ${currentMonth === idx ? 'active' : ''} ${disabled ? 'disabled' : ''}" data-month="${idx}" ${disabled ? 'disabled' : ''}>${m}</button>`; }).join('');
-            document.querySelectorAll('.month-tab:not([disabled])').forEach(btn => btn.addEventListener('click', () => switchMonth(parseInt(btn.dataset.month))));
-        }
-        async function switchYear(year) {
-            if (isYearDisabled(year)) { showToast("該年份無有效資料", true); return; }
-            if (pendingChanges.size && !(await Swal.fire({ title: '未儲存', text: '切換年份將遺失未儲存修改', icon: 'warning', showCancelButton: true }).isConfirmed)) return;
-            pendingChanges.clear(); currentYear = year;
-            let first = 0; for (let m = 0; m < 12; m++) if (!isMonthDisabled(year, m)) { first = m; break; }
-            currentMonth = first;
-            renderYearTabs(); renderMonthTabs();
-        }
-        async function switchMonth(idx) {
-            if (isMonthDisabled(currentYear, idx)) { showToast("該月份無有效資料", true); return; }
-            if (pendingChanges.size && !(await Swal.fire({ title: '未儲存', text: '切換月份將遺失未儲存修改', icon: 'warning', showCancelButton: true }).isConfirmed)) return;
-            pendingChanges.clear(); currentMonth = idx;
-            await withLoading(() => loadMonthData(currentYear, currentMonth), "載入月份"); await renderTable(); renderMonthTabs(); updatePendingUI();
-        }
     </script>
 </body>
 
