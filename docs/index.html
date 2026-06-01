@@ -720,12 +720,10 @@
                         if (snap.exists()) {
                             const data = snap.val();
                             total += (data.differenceMinutes || 0) + (data.rectifyingFactor || 0);
-                            console.log(`${y}/${m}`, (data.differenceMinutes || 0), (data.rectifyingFactor || 0))
                         }
                     } catch (e) { }
                 }
             }
-            console.log(total)
             return total;
         }
 
