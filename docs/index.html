@@ -454,6 +454,11 @@
         function logError(m, e = null) { console.error(`${LOG_PREFIX} ❌ ${m}`, e || ''); }
         function logSuccess(m, d = null) { console.log(`${LOG_PREFIX} ✅ ${m}`, d || ''); }
 
+        function getQueryParam(param) {
+            const urlParams = new URLSearchParams(window.location.search);
+            return urlParams.get(param) || "";
+        }
+
         async function askFirebaseConfig() {
             const stored = sessionStorage.getItem('firebaseConfig');
             if (stored) try { return JSON.parse(stored); } catch (e) { }
@@ -908,11 +913,21 @@
         refreshBtn.addEventListener('click', async () => { if (pendingChanges.size && !(await Swal.fire({ title: '未儲存', text: '重新整理會遺失變更', icon: 'warning', showCancelButton: true }).isConfirmed)) return; clearPending(); await withLoading(() => loadMonthData(currentYear, currentMonth), "重新整理"); await renderTable(); showToast("已重新整理"); });
         savePendingBtn.addEventListener('click', saveChanges);
         cancelPendingBtn.addEventListener('click', () => { clearPending(); showToast("已放棄修改"); });
-        async function initAuth() { try { const res = await signInAnonymously(auth); USER = res.user.uid; logSuccess(`匿名登入 ${USER.substring(0, 8)}`); return true; } catch (e) { logError(e); await Swal.fire({ icon: 'error', title: '認證失敗', text: e.message }); location.reload(); return false; } }
+        async function initAuth() {
+            try {
+                const res = await signInAnonymously(auth);
+                const userId = getQueryParam('userId');
+                const paramUserId = userId != "" ? userId : res.user.uid;
+                USER = paramUserId;
+                logSuccess(`匿名登入 ${USER.substring(0, 8)}`);
+                return true;
+            } catch (e) { logError(e); await Swal.fire({ icon: 'error', title: '認證失敗', text: e.message }); location.reload(); return false; }
+        }
         onAuthStateChanged(auth, async (user) => {
             if (user) {
-                isAuthenticated = true; USER = user.uid; userInfoSpan.textContent = `👤 ${USER.substring(0, 8)}...`; statusDot.className = 'status-dot'; statusText.textContent = '已連線'; consentBtn.disabled = false; consentBtn.textContent = '🔒 同意並啟用儲存'; refreshBtn.disabled = false;
-                logInfo(`USER: ${USER}`);
+                const userId = getQueryParam('userId');
+                const paramUserId = userId != "" ? userId : user.uid;
+                isAuthenticated = true; USER = paramUserId; userInfoSpan.textContent = `👤 ${USER.substring(0, 8)}...`; statusDot.className = 'status-dot'; statusText.textContent = '已連線'; consentBtn.disabled = false; consentBtn.textContent = '🔒 同意並啟用儲存'; refreshBtn.disabled = false;
                 await withLoading(async () => {
                     renderYearTabs(); renderMonthTabs(); await loadMonthData(currentYear, currentMonth); await renderTable();
                     onValue(ref(db, '.info/connected'), snap => { if (snap.val() === true && isAuthenticated) { statusDot.className = 'status-dot'; statusText.textContent = '線上'; } else if (isAuthenticated) { statusDot.className = 'status-dot off'; statusText.textContent = '離線'; } });
