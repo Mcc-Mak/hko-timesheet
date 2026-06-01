@@ -734,7 +734,7 @@
 
         async function renderTable() {
             if (!currentTableData.length) { tableContainer.innerHTML = '<div style="text-align:center;padding:40px;">📅 無資料</div>'; return; }
-            let html = `<h3 class="month-title">📆 ${currentYear} 年 ${currentMonth} 月</h3><div class="table-wrapper"><table><thead><tr><th>日期</th><th>類別</th><th>星期</th><th>時間（一）</th><th>時間（二）</th><th>時間（三）</th><th>時間（四）</th><th>早上請假</th><th>下午請假</th><th>預計工時</th><th>實際工時</th><th>預計下班時間</th></tr></thead><tbody>`;
+            let html = `<h3 class="month-title">📆 ${currentYear} 年 ${currentMonth + 1} 月</h3><div class="table-wrapper"><table><thead><tr><th>日期</th><th>類別</th><th>星期</th><th>時間（一）</th><th>時間（二）</th><th>時間（三）</th><th>時間（四）</th><th>早上請假</th><th>下午請假</th><th>預計工時</th><th>實際工時</th><th>預計下班時間</th></tr></thead><tbody>`;
             for (const row of currentTableData) {
                 const pendingAm = pendingChanges.has(`${row.date}_isAmOff`) ? pendingChanges.get(`${row.date}_isAmOff`) : row.isAmOff;
                 const pendingPm = pendingChanges.has(`${row.date}_isPmOff`) ? pendingChanges.get(`${row.date}_isPmOff`) : row.isPmOff;
