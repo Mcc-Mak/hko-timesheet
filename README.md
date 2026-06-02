@@ -129,18 +129,51 @@
 
 ```json
 {
-  "rules": {
-    "holiday": {
-      ".read": true,
-      ".write": true
+  "rules":{
+    "offset":{
+      ".read": "auth != null",
+      ".write": "auth != null",
+      "$userId":{
+        ".read": "$userId === auth.uid",
+        ".write": "$userId === auth.uid",
+        "$year":{
+          ".read": "$userId === auth.uid",
+          ".write": "$userId === auth.uid",
+          "$month":{
+            ".read": "$userId === auth.uid",
+            ".write": "$userId === auth.uid"
+          }
+        }
+      }
     },
-    "timesheet": {
-      ".read": true,
-      ".write": true
+    "holiday":{
+      ".read": "auth != null",
+      ".write": "auth != null",
+      "$holidayId":{
+        ".read": "auth != null",
+        ".write": "auth != null"
+      }
     },
-    "offset": {
-      ".read": true,
-      ".write": true
+    "timesheet":{
+      ".read": "auth != null",
+      ".write": "auth != null",
+      "$userId":{
+        ".read": "$userId === auth.uid",
+        ".write": "$userId === auth.uid",
+        "$year":{
+          ".read": "$userId === auth.uid",
+          ".write": "$userId === auth.uid",
+          "$month":{
+            ".read": "$userId === auth.uid",
+            ".write": "$userId === auth.uid",
+            "$day":{
+              ".read": "$userId === auth.uid",
+              ".write": "$userId === auth.uid",
+              ".validate":"(!newData.hasChild('time1') || newData.child('time1').isString()) && (!newData.hasChild('time2') || newData.child('time2').isString()) && (!newData.hasChild('time3') || newData.child('time3').isString()) && (!newData.hasChild('time4') || newData.child('time4').isString()) && (!newData.hasChild('isAmOff') || newData.child('isAmOff').isBoolean()) && (!newData.hasChild('isPmOff') || newData.child('isPmOff').isBoolean())"
+            }
+          }
+        }
+      }
     }
   }
 }
