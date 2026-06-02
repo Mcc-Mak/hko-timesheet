@@ -875,7 +875,7 @@
             await saveCumulativeDiffToFirebase(monthDiff);
             const totalOffset = await calculateTotalCumulativeDiffFromJul2025();
             const totalOffsetText = `${totalOffset < 0 ? "要加班" : "已加班"} ${minToTime(Math.abs(totalOffset))}`;
-            html += `<tr class="footer-row"><td colspan="9" style="text-align:right;font-weight:bold;">累計總差值 (2025-07 至本月，含校正)</td><td colspan="3" style="font-weight:bold;">${totalOffsetText}NonNull</td>`;
+            html += `<tr class="footer-row"><td colspan="9" style="text-align:right;font-weight:bold;">累計總差值 (2025-07 至本月，含校正)</td><td colspan="3" style="font-weight:bold;">${totalOffsetText}</td>`;
             html += `</tbody></table></div>`;
             tableContainer.innerHTML = html;
             const currentFactor = await getRectifyingFactor(currentYear, currentMonth);
