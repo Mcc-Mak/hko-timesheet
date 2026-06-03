@@ -4,7 +4,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes">
-    <title>📋 HKO 工時表系統</title>
+    <title>📋 HKO 工時表系統 (完整模板保留)</title>
     <script type="importmap">
         {
             "imports": {
@@ -403,7 +403,7 @@
 <body>
     <div class="container">
         <div class="header-section">
-            <h2>📋 HKO 工時表系統</h2>
+            <h2>📋 HKO 工時表</h2>
             <div>
                 <div class="user-info" id="userInfo">未登入</div>
                 <div class="status"><span class="status-dot pending" id="statusDot"></span><span
@@ -625,7 +625,7 @@
 <html>
 <head>
     <meta charset="utf-8" />
-    <title>${tendorNumber} Timesheet_${currentYear}.${currentMonth + 1}_${staffNameDisplay}</title>
+    <title>${tendorNumber} Timesheet_${currentYear}.${new String(currentMonth + 1).padStart(2, '0')}_${staffNameDisplay}</title>
     <style>${styleCss1}</style>
 </head>
 <body style="position:absolute;top:-50px">
