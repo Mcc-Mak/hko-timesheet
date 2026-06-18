@@ -3,8 +3,8 @@
 一個基於 Firebase 的員工工時記錄與請假管理系統，支援半日/全日請假、公眾假期自動標記、特別安排備註、**累計工時差值追蹤**等功能。系統現已升級為**電子郵件登入**，確保資料安全與個人化。
 
 ## Access
-- [🌐 GitHub Page](https://mcc-mak.github.io/hko-timesheet/)
-- [🛢 Firebase](https://console.firebase.google.com/u/0/project/hko-timesheet/database/hko-timesheet-default-rtdb/data)
+- 🌐 [GitHub Page](https://mcc-mak.github.io/hko-timesheet/)
+- 🛢 [Firebase](https://console.firebase.google.com/u/0/project/hko-timesheet/database/hko-timesheet-default-rtdb/data)
 
 ## ✨ 主要功能
 
